@@ -1,0 +1,8 @@
+# Walled client vaults — confidential, NEVER committed.
+# git push is a leak path that OS perms don't cover. Locked rule:
+# vault/ is local-only. See STATE.md → Memory architecture → Vault rule.
+vault/
+memory/scopes/*/vault/
+
+# OS cruft
+.DS_Store
