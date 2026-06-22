@@ -128,8 +128,8 @@ The Hermes side is partially done (aux models live, primary wired). The Claude C
 
 | Source | Role |
 |--------|------|
-| `STATE.md` HEAD — Operating model bullet (line 17) | Routing doctrine, canonical wording |
-| `STATE.md` HEAD — Model Routing deep dive pending item (lines 185–196) | Full sub-bullets: re-audit, adversarial review, cost-tier, GLM parked, Hermes live, routing inputs locked |
+| `STATE.md` HEAD — Operating model section | Routing doctrine, canonical wording |
+| `STATE.md` HEAD — Pending: Model Routing — mechanism dive | Full sub-bullets: re-audit, adversarial review, cost-tier, Hermes live, routing inputs locked |
 | `DECISIONS.md` — OM-5 | Routing policy, locked 2026-06-19 |
 | `DECISIONS.md` — MR-1 | Cost-tier doctrine + hardware gate, locked 2026-06-19 |
 | `DECISIONS.md` — TOOL-3 | Hermes aux swap, locked 2026-06-21 |

@@ -45,7 +45,7 @@ Files are frontmattered (title, date, scope, substrate) so the search index can 
 
 ### How it works
 
-A nightly cron agent — the "dream" — reads every new source since the last run, plus scope-appropriate logs, plus the shared graph. For each new source it makes a depth call:
+The reconciler's nightly heavy distillation / synthesis pass — the "dream" — reads every new source since the last run, plus scope-appropriate logs, plus the shared graph. For each new source it makes a depth call:
 
 - **Full cross-linked node** — the source is dense enough to earn a permanent graph node with edges to related concepts.
 - **One-line stub** — worth indexing minimally; not enough substance for a full node yet.
@@ -104,7 +104,7 @@ Pull at query time. No pre-processing required. The `sources/` layer is always s
 
 ### 2. Proactive dreaming
 
-The nightly cron agent described above. Runs on new material only (bounded by last-run timestamp). Produces nodes, stubs, cross-links, conflict flags, pending-review suggestions. The human reviews the pending queue; accepted items become canonical. The dream doesn't block on human approval — it keeps running — but it doesn't auto-promote uncertain nodes either.
+The reconciler's nightly heavy distillation / synthesis pass ("dreaming") described above. Runs on new material only (bounded by last-run timestamp). Produces nodes, stubs, cross-links, conflict flags, pending-review suggestions. The human reviews the pending queue; accepted items become canonical. The dream doesn't block on human approval — it keeps running — but it doesn't auto-promote uncertain nodes either.
 
 This mode is what keeps the graph current without requiring the human to explicitly curate every ingested source.
 
@@ -192,7 +192,7 @@ Four categories, **grounded in what Claude Code actually exposes** (verified aga
 - **Tier 1 — explicit sentinels** the user types deliberately: **`#good`** (worth keeping / reinforce this) and **`#bad`** (wrong / behavioral lesson). These are the *highest-confidence* signal — a human verdict — and the cheapest possible to detect (exact string, no semantics). The choice is deliberately **collision-free**: natural words like "no", "wrong", "great" were rejected because the user uses them constantly in benign ways (high false-positive); `#good`/`#bad` appear *only* as signals. (The user floated "fuck"/"great" — same collision problem, so we moved to the hashtag form.)
 - **Tier 2 — inferred:** the structural (`is_error`/`PostToolUseFailure`) + natural-language-regex signals in the table above. Best-effort, automatic, for when nothing was marked.
 
-**The opt-in gap (OPEN-8) — the real unresolved question.** Sentinels are opt-in, and the user *will* forget to mark things worth keeping. So **sentinel-absence must never be read as low-value**, and the inferred tier + the reconciler's own judgment must remain the safety net. *How exactly* the tiers interact — does the reconciler proactively surface unmarked-but-salient items for review? a periodic "did I miss anything" sweep? how is an unmarked-but-clearly-important correction weighted vs a `#bad`? — is **deferred to OPEN-8** and is the explicit starting point for the next session. The decision here locks the *markers and tiers*; it does **not** yet lock the forget-safety behavior.
+**The opt-in gap — now resolved.** Sentinels are opt-in, and the user *will* forget to mark things worth keeping. So **sentinel-absence must never be read as low-value**. Resolution: **`#good`/`#bad` are priority overrides, not gates** — they are reviewed first, never auto-promote on their own, and remain subject to reconciler judgment. The inferred tier remains active whether or not a sentinel was used. The reconciler's nightly heavy pass must also surface a small set of **unmarked-but-likely-salient** candidates as a periodic **"did I miss anything?"** sweep. That closes the forget-safety hole without making memory depend on perfect human marking.
 
 **Cost connection.** The salience set (errors + `#good`/`#bad` + corrections + decisions) is also the **cost lever** for the dream: a cheap mechanical pass gathers only the flagged spans into a digest, and the expensive model judges the digest, never the raw firehose (DESIGN §8). So the signals serve quality *and* keep nightly-cron token cost bounded to flagged material.
 
