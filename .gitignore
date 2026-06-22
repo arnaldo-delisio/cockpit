@@ -4,5 +4,11 @@
 vault/
 memory/scopes/*/vault/
 
+# Secrets — shared-key home both brains source; NEVER committed (clone-clean, MEM-23).
+# Track .env.example instead. See skills/*/SKILL.md for which keys each skill reads.
+.env
+.env.*
+!.env.example
+
 # OS cruft
 .DS_Store
