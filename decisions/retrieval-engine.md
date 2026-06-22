@@ -1,19 +1,45 @@
 ---
 topic: Memory retrieval engine selection
-decisions: [MEM-15, TOOL-1]
-related: [MEM-10]
-status: locked
+decisions: [MEM-15, MEM-24, TOOL-1]
+related: [MEM-10, MEM-19]
+status: engine pick superseded by MEM-24 (real-machine smoke-test 2026-06-22); spine + frame stand
 amended_by: MEM-23
 date: 2026-06-21
 ---
 
-# Retrieval Engine: AnythingLLM Chosen, NotebookLM Dropped
+# Retrieval Engine: minimal in-process stack chosen (was AnythingLLM); NotebookLM dropped
 
-> **Amended 2026-06-22 (MEM-23):** the "isolated workspaces per substrate / per-client vault" walling rationale below is **retired** — there is one shared graph, one workspace. (A later check-pass also found AnythingLLM workspaces are namespaces in a shared DB, not a real security boundary — moot under VM isolation.) The engine choice (local AnythingLLM over owned markdown, zero-network, swappable) **stands**, now weighed against simpler direct-ONNX + sqlite-vec + ripgrep at the real-machine smoke-test.
+> **Superseded 2026-06-22 (MEM-24) — engine pick only.** The real-machine smoke-test picked a **minimal in-process Node stack** over AnythingLLM (see *Resolution* below). The decision *frame* is unchanged — local engine, owned-markdown spine, swappable cache — only the which-engine answer flipped. The AnythingLLM analysis below is retained as the trail.
+>
+> **Amended 2026-06-22 (MEM-23):** the "isolated workspaces per substrate / per-client vault" walling rationale below is **retired** — there is one shared graph, one workspace. (A check-pass also found AnythingLLM workspaces are namespaces in a shared DB, not a real security boundary — moot under VM isolation.) Removing multi-workspace isolation removed AnythingLLM's main structural draw, which is what tipped the smoke-test to the lighter stack.
 
 ## TL;DR
 
-AnythingLLM is the single local retrieval engine for both the shared knowledge graph and all client vaults. NotebookLM is dropped entirely. The store of record is owned markdown; the engine is a swappable cache on top of it — losing the engine means losing convenience, not knowledge.
+**The retrieval engine is a minimal in-process stack (MEM-24):** `@huggingface/transformers` (`all-MiniLM-L6-v2` ONNX, local) + `Float32Array`+JSON cache + **brute-force cosine** (no vector DB) + ripgrep + RRF — `require`d in-process by the reconciler, no Docker/daemon/GUI. It beat AnythingLLM on a real-machine smoke-test once MEM-23 removed the multi-workspace need. NotebookLM stays dropped (TOOL-1). The store of record is owned markdown; the engine is a swappable cache on top — losing it means losing convenience, not knowledge.
+
+## Resolution — smoke-test → minimal in-process stack (MEM-24, 2026-06-22)
+
+MEM-15 named AnythingLLM but flagged a real-machine smoke-test as the gate, and explicitly invited weighing a simpler direct-ONNX stack once MEM-23 removed the multi-workspace need. A research agent + a real smoke-test on the actual laptop closed it.
+
+**Machine facts that reframed it:** no Docker/Podman installed (AnythingLLM = Docker *or* Electron desktop app only); ~6 GB free RAM (heavy persistent app/daemon is costly); corpus is tiny (20 files / 256 KB / 36k words today, hundreds→few-thousand small nodes over years); GPU irrelevant (ONNX embedder is CPU). With workspaces gone (MEM-23), AnythingLLM was a heavyweight app whose remaining features (GUI, chat, workspaces) we don't use.
+
+**The chosen stack (MEM-24):**
+- **Embedding:** `@huggingface/transformers` v4.x running `Xenova/all-MiniLM-L6-v2` (ONNX), `allowRemoteModels=false` after first ~23 MB download → zero-network. **Not** `@xenova/transformers` (deprecated, 2yr stale).
+- **Storage:** flat `Float32Array` + JSON metadata sidecar; re-embed only on content-hash change. No vector DB.
+- **Search:** brute-force cosine (vectors normalized → dot product). **No ANN index** — unjustified below ~50k vectors.
+- **Keyword (L1–L2):** ripgrep. **Fusion:** MEM-19 RRF (k=60), ~20 lines.
+- **Wiring:** the reconciler (Node) `require`s it in-process. No server, daemon, GUI, or Docker.
+
+**Smoke-test results (real machine, Node v26, 2026-06-22):**
+- Installs + runs on Node v26; **native ORT backend confirmed** (not slow WASM fallback) — the one UNVERIFIED risk, killed.
+- **Retrieval quality: 4/4 real-corpus queries returned the exactly-correct node** (incl. subtle ones — MEM-22 sentinels, the VM trust boundary, the CLAUDE.md projection fence).
+- **Latency:** ~9–11 ms warm (query embed + scan). **RAM:** 93 MB baseline → 234 MB after model load → 747 MB worst-case full corpus re-embed in batches of 8 (steady-state ~234 MB; reconciler embeds only changed nodes). *(An 8 GB RSS spike appeared only when embedding all 280 chunks in a single padded batch — an artifact no incremental path hits.)*
+
+**Scaling envelope:** ~1.5 KB/node vector + ~0.2 µs/node scan. Brute-force stays interactive (<30 ms total query) to **~50k–100k nodes** — roughly 20–100× the plausible 5-year ceiling. RAM only binds at ~2–3M nodes. If ever exceeded, an ANN index (sqlite-vec / LanceDB) drops in *as a cache* — the owned-markdown spine never moves.
+
+**Rejected at the smoke-test:** AnythingLLM (heavyweight app; Docker/Electron; no embeddable Node-library path → must run a sidecar daemon); Open Notebook (SurrealDB process + active CVEs); sqlite-vec & LanceDB & hnswlib (ANN unneeded at our scale; sqlite-vec also pre-1.0, Node v26 binding unverified); txtai / Chroma (Python server); LlamaIndex.TS (deprecated; framework, not a retrieval primitive). NotebookLM stays out (TOOL-1) — MEM-23 dissolves only its *confidentiality* objection, not the no-API / not-owned / wrong-output-shape ones.
+
+---
 
 ## Context / The Problem
 

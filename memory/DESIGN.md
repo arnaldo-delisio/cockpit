@@ -1,6 +1,6 @@
 # Cockpit Memory Layer — Canonical Design
 
-**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20; 2026-06-22 blocking-spec lock — concrete build formats in §6a; 2026-06-22 walling layer retired — isolation moved to the VM boundary, MEM-23). Build not started.
+**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20; 2026-06-22 blocking-spec lock — concrete build formats in §6a; 2026-06-22 walling layer retired — isolation moved to the VM boundary, MEM-23; 2026-06-22 retrieval engine = minimal in-process stack after real-machine smoke-test, MEM-24 supersedes MEM-15's AnythingLLM pick). Build not started.
 **Source of decisions:** `~/.cockpit/DECISIONS.md` (MEM-*, TOOL-*, BUILD-*). This doc is the integrated spec of *how the memory layer works*; DECISIONS holds the choice-by-choice trail + rejected alternatives; `log/` holds the chronology.
 **Scope of this doc:** the memory layer only. Tools, skills, `~/CLAUDE.md` orchestration, and the Hermes↔Claude handoff are separate deep dives.
 
@@ -16,7 +16,7 @@ One memory substrate that a **fleet of agents** — Hermes capability-agents (co
 
 - **Graph, not tree.** Knowledge is a unified, cross-linked, self-improving graph (Karpathy "LLM OS"). Retrieved by search, not by folder path.
 - **Own the substrate.** Store of record = distilled, wikilinked **markdown we own** + git. No third party holds the brain.
-- **Buy retrieval, run it local.** A swappable local engine (AnythingLLM, MEM-15) sits *on top of* the owned markdown — embeddings + retrieval 100% local, no third party in the retrieval path.
+- **Buy retrieval, run it local.** A swappable local engine sits *on top of* the owned markdown — embeddings + retrieval 100% local, no third party in the retrieval path. The engine is a **minimal in-process stack** (MEM-24): `all-MiniLM-L6-v2` ONNX embeddings + brute-force cosine + ripgrep + RRF, `require`d by the reconciler — no server/daemon.
 - **Isolation is structural, not in-graph.** Confidentiality is enforced at the VM boundary (one trust domain per VM, MEM-23), never by in-graph tags or prompt instruction. The main graph is one non-confidential trust domain.
 - **One writer for truth.** Many agents observe; a single reconciler writes canonical nodes.
 - **Distill, don't dump.** Resources are compressed to durable facts before they enter the brain.
@@ -192,12 +192,12 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 ## 7. Retrieval
 
 **Hybrid, complementary by level** (5-level taxonomy: exact → topic → semantic → relationship-chain → graph-inference):
-- **Semantic (≈L3):** the **local retrieval engine** (AnythingLLM, MEM-15) over the owned markdown — native zero-network ONNX embedder (`all-MiniLM-L6-v2`), embeddings + retrieval 100% local. One shared graph, one workspace (no per-vault isolation — MEM-23). A swappable cache → low lock-in (breaks = lose convenience, not knowledge; the spine is engine-independent owned markdown).
+- **Semantic (≈L3):** a **minimal in-process stack** (MEM-24, supersedes MEM-15's AnythingLLM pick) over the owned markdown — `@huggingface/transformers` running `all-MiniLM-L6-v2` (ONNX, zero-network, local) for embeddings, a flat `Float32Array`+JSON cache (re-embed on content-hash change), and **brute-force cosine** (no vector DB — unjustified below ~50k nodes). One shared graph (no per-vault isolation — MEM-23). The reconciler `require`s it in-process — no server/daemon/GUI. A swappable cache → low lock-in (breaks = lose convenience, not knowledge; the spine is engine-independent owned markdown).
 - **Relationship / inference (≈L4–5):** **wikilink graph traversal** over the owned markdown.
 - **Tiering for token discipline:** hot cache → master index → deep wiki (~40K baseline). Evergreen knowledge → graph; volatile/live data (project state, client meeting notes) → **pointed-to, not ingested**.
 - **Session hygiene (separate concern):** context-mode handles in-session context-window protection — it is **not** a memory store of record (MEM-15). Never index canonical notes into context-mode.
 
-**Engine choice (MEM-15):** AnythingLLM, one local engine over one shared graph — decided. Chosen over NotebookLM (dropped — TOOL-1) and Open Notebook (runner-up). Build **smoke-tests AnythingLLM on the real machine** (RAM-tight) before integration, with **Open Notebook** or the simpler **direct-ONNX + sqlite-vec + ripgrep** as named fallbacks if it fails — a verification step, not an open choice. Does not block the memory build: the store of record is owned markdown and the engine is swappable on top.
+**Engine choice (MEM-24, supersedes MEM-15):** the **minimal in-process stack** above — chosen over AnythingLLM at a real-machine smoke-test (2026-06-22) once MEM-23 removed the multi-workspace need that was AnythingLLM's main draw. Smoke-test passed decisively: native ORT backend on Node v26, 4/4 real-corpus queries correct, ~9–11 ms warm, ~234 MB steady RAM. Brute-force stays interactive to ~50k–100k nodes (≫ our scale); an ANN index (sqlite-vec/LanceDB) is a drop-in cache swap only if ever exceeded. NotebookLM dropped (TOOL-1); AnythingLLM + Open Notebook rejected (heavyweight app / SurrealDB+CVEs). Does not block the memory build: the store of record is owned markdown and the engine is swappable on top. **Depth:** decisions/retrieval-engine.md.
 
 **Freshness:** owned markdown is truth, the retrieval engine is cache. Re-sync triggered post-reconciler-commit; per-document `last_synced`; queries in a stale window are flagged. (TTLs in backlog.)
 
@@ -239,7 +239,7 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 
 No rivalry — roles assigned (MEM-15):
 - **Claude Code file memory + Hermes memory** → collapse into the **identity layer** (soul.md + per-scope identity).
-- **Retrieval** → the one local engine (AnythingLLM) over one shared graph (MEM-23 — no per-vault workspaces).
+- **Retrieval** → the minimal in-process stack (MEM-24) over one shared graph (MEM-23 — no per-vault workspaces).
 - **context-mode** → **session hygiene only** (in-session context-window protection), never a store of record. Its keyword KB / auto-memory is not canonical.
 - **NotebookLM** → dropped entirely (TOOL-1).
 

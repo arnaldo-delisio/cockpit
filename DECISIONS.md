@@ -24,7 +24,7 @@ add an analysis file + a row here. Map:
 | `decisions/walling.md` | MEM-3,4,5,6,7 |
 | `decisions/path-topology.md` | MEM-13 |
 | `decisions/ingestion-and-curation.md` | MEM-14,16,17,18,21,22 |
-| `decisions/retrieval-engine.md` | MEM-15 · TOOL-1 |
+| `decisions/retrieval-engine.md` | MEM-15 · MEM-24 · TOOL-1 |
 | `decisions/headroom-eval.md` | TOOL-2 |
 | `decisions/doc-architecture.md` | DOC-1 |
 | `decisions/claude-md-projection.md` | MEM-20 |
@@ -124,8 +124,9 @@ add an analysis file + a row here. Map:
 **Decision:** `sources/` = raw capture layer per scope (verbatim, frontmattered, search-indexed). **Capture = intent, no engagement gate** — everything autosaves, **scope-aware** tagging (mechanical — from the input's origin + the session's scope, never by judging content meaning; organization not security, MEM-23). The nightly **dream judges depth** by reading (full node / stub / leave-raw), self-correcting via re-search. Memory is **freely mutable; git is the undo** — no tombstone/status-tier ceremony, no scheduled space-GC.
 **Rejected:** engagement-meter gating; GC tombstone ceremony (git already gives reversibility). **Supersedes** DESIGN.md §10's tombstone language.
 
-### MEM-15 · Retrieval engine = AnythingLLM (local), one shared graph  [Locked 2026-06-21, amended by MEM-23 2026-06-22]
-**Decision:** ONE local engine (AnythingLLM) does semantic retrieval over the owned markdown — **one shared graph**, no per-vault workspaces (intra-graph walling retired, MEM-23). context-mode = **session hygiene only**, never a store of record. **New graph starts clean — no legacy memory migrated** (all auto-learned memory was made under the old setup → untrusted; only deliberate hand-authored notes carry forward by hand).
+### MEM-15 · Retrieval engine = AnythingLLM (local), one shared graph  [Locked 2026-06-21; amended by MEM-23 2026-06-22; **engine pick superseded by MEM-24** 2026-06-22]
+**Superseded by MEM-24 (engine pick only):** the real-machine smoke-test (2026-06-22) chose the **minimal in-process stack** over AnythingLLM. Everything else below **stands** — owned-markdown store of record, engine-as-swappable-cache, one shared graph, context-mode = session hygiene only, clean-start (no legacy migration). Only the *which-engine* answer changed.
+**Decision (historical):** ONE local engine (AnythingLLM) does semantic retrieval over the owned markdown — **one shared graph**, no per-vault workspaces (intra-graph walling retired, MEM-23). context-mode = **session hygiene only**, never a store of record. **New graph starts clean — no legacy memory migrated** (all auto-learned memory was made under the old setup → untrusted; only deliberate hand-authored notes carry forward by hand).
 **Why:** native zero-network ONNX embedder fits the laptop; full REST API (reconciler pushes nodes); 100% local kills the retrieval leak-surface entirely.
 **Rejected:** NotebookLM (→ TOOL-1); Open Notebook = runner-up, **kept only as the named fallback** if AnythingLLM fails the real-machine smoke test at build (a verification step, not an open choice — engine is swappable, spine is engine-independent owned markdown). **Build flags:** smoke-test AnythingLLM on the real machine first — and weigh the simpler **direct-ONNX + sqlite-vec + ripgrep + RRF** option there, now that no multi-workspace isolation is needed (the check-pass found AnythingLLM workspaces are namespaces in one shared DB, not a security boundary — moot under MEM-23); context-mode upgraded 1.0.107→1.0.163 (done). **Supersedes** DESIGN.md §7/§11.
 
@@ -167,6 +168,12 @@ add an analysis file + a row here. Map:
 **Supersedes:** MEM-3, MEM-4, MEM-5, MEM-6, MEM-7.
 **Amends:** MEM-2 (SCOPE = organization, not a wall), MEM-11 (drops `substrate` + `sensitivity` fields), MEM-13 (drops `vault/` dirs + vault rule), MEM-15 (one shared graph, no per-vault workspaces).
 **Relates:** OPEN-7 (confidential-client org happens at the future VM). **Depth:** `decisions/walling.md` (superseded-in-place — retains the threat model + rejected-options trail).
+
+### MEM-24 · Retrieval engine = minimal in-process stack (brute-force, no vector DB)  [Locked 2026-06-22, supersedes MEM-15's engine pick]
+**Decision:** the semantic-retrieval engine is a **minimal in-process Node stack**, not AnythingLLM: `@huggingface/transformers` running `all-MiniLM-L6-v2` (ONNX, local / zero-network) for embeddings + a flat `Float32Array`+JSON sidecar cache (re-embed only on content-hash change) + **brute-force cosine** (no vector DB) + ripgrep for keyword (L1–L2) + the MEM-19 RRF (k=60) fusion. The reconciler `require`s it **in-process** — no Docker, no daemon, no GUI, no server.
+**Why:** smoke-tested on the real machine (2026-06-22) — installs + runs on Node v26 with the **native ORT backend** (not WASM), 4/4 real-corpus queries hit the exactly-correct node, **~9–11 ms** warm queries, **~234 MB** steady RAM / **747 MB** worst-case full re-embed (incremental batches). MEM-23 deleted AnythingLLM's only real draw (multi-workspace isolation), leaving a heavyweight app (Docker/Electron + GUI + chat) for a job a ~20-line in-process stack does better at our scale. At hundreds→few-thousand nodes an ANN index is pure overhead (brute-force is sub-ms).
+**Scaling:** ~1.5 KB/node vector + ~0.2 µs/node scan → brute-force stays interactive to **~50k–100k nodes** (~20–100× the realistic 5-year ceiling); RAM only binds ~2–3M nodes. When/if hit, an ANN index (sqlite-vec / LanceDB) is a **drop-in cache swap** — owned-markdown spine unchanged (MEM-15's swappable-cache principle).
+**Rejected:** AnythingLLM (heavyweight app; Docker/Electron; workspaces/GUI/chat unused post-MEM-23); Open Notebook (SurrealDB dep + active CVEs); sqlite-vec / LanceDB / HNSW (ANN unjustified <~50k nodes; sqlite-vec also pre-1.0 on Node v26); `@xenova/transformers` (deprecated, 2yr stale — use `@huggingface/transformers`); NotebookLM (TOOL-1 — no API, can't own the spine, wrong output shape; MEM-23 dissolves only its *confidentiality* objection, not the structural ones). **Relates:** MEM-19 (RRF), MEM-10 (owned spine). **Depth:** `decisions/retrieval-engine.md`.
 
 ---
 
