@@ -40,7 +40,7 @@ add an analysis file + a row here. Map:
 ### OM-2 · Two thin global shells  [Locked 2026-06-18]
 **Decision:** `~/CLAUDE.md` (builder) + `~/SOUL.md` (Hermes operator) at `~`. Infra only, not "personal."
 **Why:** `~/CLAUDE.md` merges cwd→`/` and loads in every session — it must be owned and thin, not avoided.
-**Clarified [2026-06-22]:** canonical content lives **in-repo** at `~/.cockpit/shells/{CLAUDE,SOUL}.md`; `~/{CLAUDE,SOUL}.md` are **relative symlinks** into it (version-controlled + clone-clean per MEM-23; a future `bootstrap.sh` recreates the symlinks). Kept in `shells/` — not `~/.cockpit/CLAUDE.md`, which auto-loads in cockpit-rooted sessions and is reserved for the cockpit-scope MEM-20 projection; symlinking there would double-load. Chose symlink over an `@`-import loader (BUILD-2 bans `@`-imports; Hermes's SOUL.md loader may not support them; symlink is filesystem-level + uniform for both shells).
+**Clarified [2026-06-22]:** canonical content lives **in-repo** at `~/.cockpit/shells/{CLAUDE,SOUL}.md` (version-controlled + clone-clean per MEM-23). `~/CLAUDE.md` is a thin **`@`-import loader** (`@.cockpit/shells/CLAUDE.md`) — explicit + greppable; BUILD-2's @-ban targets bulky deep-dives, not relocating the thin shell itself. **`SOUL.md` can't use `@`-import** (Claude-Code-only feature; Hermes won't honor it) — so `~/SOUL.md` is a prose pointer for now, and Hermes's real load wiring is finalized at the SOUL.md dive. Kept in `shells/` — not `~/.cockpit/CLAUDE.md`, which auto-loads in cockpit-rooted sessions and is reserved for the cockpit-scope MEM-20 projection. The home loader/pointer are small artifacts `bootstrap.sh` recreates on a clone.
 
 ### OM-3 · Identity is per-context, never global  [Locked 2026-06-18]
 **Decision:** every real identity (boringscale, personal, each client) is a scoped project; the global files are the *operator's* meta-identity, not any context's.
@@ -207,7 +207,7 @@ add an analysis file + a row here. Map:
 **Why:** substrate before orchestration; don't write pointers to layers that don't exist yet.
 
 ### BUILD-2 · CLAUDE.md skeleton  [Locked 2026-06-19pm]
-**Decision:** global `~/CLAUDE.md` = thin skeleton (~47 lines). **Zero `@`-imports** (eager-load would defeat thinness); deep-dive files stay backticked/lazy. **Orientation = one stable pointer** to STATE. Verify-before-freeze / no-unilateral-canonical-write kept **cockpit-scoped** (working-rhythm memory), out of the global root.
+**Decision:** global `~/CLAUDE.md` = thin skeleton (~47 lines). **No `@`-imports of deep-dives** (eager-load would defeat thinness); deep-dive files stay backticked/lazy. *(Clarified 2026-06-22: the ban targets bulky deep-dives, not the shell itself — `~/CLAUDE.md` is now a thin `@`-import loader for `.cockpit/shells/CLAUDE.md`, the version-controlled shell; identical loaded content, still thin. OM-2.)* **Orientation = one stable pointer** to STATE. Verify-before-freeze / no-unilateral-canonical-write kept **cockpit-scoped** (working-rhythm memory), out of the global root.
 **Why:** the global root loads in every project session — cockpit-specific rules there are noise. Full CLAUDE.md orchestration dive runs after the layers it points to exist.
 
 ### BUILD-3 · Memory salvage audit = first build step  [Locked 2026-06-21]
