@@ -85,7 +85,7 @@ add an analysis file + a row here. Map:
 
 ### MEM-6 · Walling write-side = substrate-provenance tag  [Locked 2026-06-19pm]
 **Decision:** an immutable `substrate` tag (`shared` | `vault:<scope>`) is stamped on every log/staging/node entry at the **write-API boundary**. Reconciler hard-rejects vault-tagged material from the shared graph; cross-substrate promotion forbidden.
-**Why:** keys-not-prompts secured only *reads*; this closes the 5 write-path leak paths. **Depth:** DESIGN.md §6.
+**Why:** keys-not-prompts secured only *reads*; this closes the 5 write-path leak paths. **Build-spec [2026-06-22]:** concrete tag grammar + **fail-closed default** — scope-undetermined ⇒ stamp `vault:unknown`, never `shared` (a mis-walled secret is unrecoverable; a mis-walled public fact is a cheap reclassification). **Depth:** DESIGN.md §6 + §6a.2.
 
 ### MEM-7 · Permission source-of-truth invariant  [Locked 2026-06-19pm]
 **Decision:** ONE ground-truth permission source (shared drive / OAuth); the local scope cache is a **read-only mirror** of it. Lose source access to a client → its memories stop pulling automatically.
@@ -104,7 +104,7 @@ add an analysis file + a row here. Map:
 
 ### MEM-11 · Node schema  [Locked 2026-06-19pm]
 **Decision:** each node carries `type · fact|inference · centrality · cluster · sensitivity · substrate · scope · schema_version`. Retrieval favors high-centrality; community detection shrinks search space.
-**Depth:** DESIGN.md §4.
+**Build-spec [2026-06-22]:** concrete YAML+prose file template + capture-vs-reconciler field-ownership split; `sensitivity` clarified as a soft handling-hint (optional, never load-bearing — `substrate` is the hard wall). **Depth:** DESIGN.md §4 + §6a.1.
 
 ### MEM-12 · Git plumbing = Haiku; judgment escalates  [Locked 2026-06-19]
 **Decision:** add/commit/push/snapshot = Haiku tier; real conflict / history repair / rollback decisions escalate to Sonnet/Opus (rare by design — single-writer + append-only ⇒ ~no conflicts). Git-doing Haiku inherits scope binding.
@@ -112,6 +112,7 @@ add an analysis file + a row here. Map:
 ### MEM-13 · Path topology  [Locked 2026-06-20]
 **Decision:** (a) knowledge graph = ONE flat pool `~/.cockpit/memory/knowledge/nodes/`, scope = node frontmatter (a master-index sits *over* the pool); (b) memory substrate = **centralized** `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,vault,sources}/`; (c) each project's co-located auto-loaded `CLAUDE.md` carries a one-line pointer to its scope; (d) project nav docs co-located with the repo.
 **Why:** memory is hook-written / reconciler-read, never navigated, so co-location buys nothing here; one home ⇒ simpler single-writer + one gitignored vault tree we own. **Vault rule [Locked]:** local-only + gitignored, never in a tree with a push remote.
+**Build-spec [2026-06-22]:** idempotent bootstrap (seed live scopes `global, cockpit, content, job-search`; rest materialized at re-onboarding, OPEN-7); `global` has no vault; bootstrap adds `memory/scopes/*/vault/` to `.gitignore`; reconciler-generated `INDEX.md` master index; append-only mode until ≥1 centroid/cluster. **Depth:** DESIGN.md §6a.3.
 
 ### MEM-14 · Ingestion + curation model  [Locked 2026-06-21]
 **Decision:** `sources/` = raw capture layer per scope (verbatim, frontmattered, search-indexed). **Capture = intent, no engagement gate** — everything autosaves, **provenance/scope-aware** scope/substrate tagging (mechanical — from the input's origin + the session's scope, never by judging content meaning; MEM-6). The nightly **dream judges depth** by reading (full node / stub / leave-raw), self-correcting via re-search. Memory is **freely mutable; git is the undo** — no tombstone/status-tier ceremony, no scheduled space-GC.
@@ -141,7 +142,7 @@ add an analysis file + a row here. Map:
 ### MEM-20 · CLAUDE.md = reconciler-projected always-load layer over memory  [Locked 2026-06-22]
 **Decision:** the reconciler (MEM-8, sole memory writer) also writes the **managed regions** of CLAUDE.md files — promoting high-`centrality` *behavioral* nodes (`type ∈ {identity, feedback}`) from the graph into the always-loaded CLAUDE.md layer, **routed by scope** (global node → `~/CLAUDE.md`; cockpit node → `~/.cockpit` CLAUDE.md; project/client node → that project's CLAUDE.md). Memory stays the home (DOC-1); the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited; the hand-authored skeleton (BUILD-2) stays in a separate block. Promotion is gated (`when_to_use` + adversarial structure/accuracy lens) + capped (the BUILD-4 10–15 `## Rules` pattern). Facts/knowledge stay retrieval-gated — they don't promote.
 **Why:** behavioral rules only bite when always-loaded; retrieval-gating makes them weak. Memory = substrate (everything, retrieval-gated); CLAUDE.md = always-load projection of the few in-scope behavior-critical rules. **One distiller (the reconciler), not two — this IS the self-evolving-CLAUDE.md mechanism**, so `headroom learn` is retired (closes TOOL-2's park; no external miner / leak surface).
-**Relates:** extends MEM-8; reuses BUILD-4 (reconciler-only promotion); respects BUILD-2/OM-6 (scope routing keeps the global root thin) + DOC-1 + MEM-10 (CLAUDE.md = another cache over owned markdown) + MEM-6/§6 (vault never projects to a shared-loaded file). **Depth:** decisions/claude-md-projection.md.
+**Relates:** extends MEM-8; reuses BUILD-4 (reconciler-only promotion); respects BUILD-2/OM-6 (scope routing keeps the global root thin) + DOC-1 + MEM-10 (CLAUDE.md = another cache over owned markdown) + MEM-6/§6 (vault never projects to a shared-loaded file). **Build-spec [2026-06-22]:** concrete fence contract (`<!-- managed:reconciler:begin/end -->`, full-interior idempotent replace, per-rule `[[source-node]]` backlink, over-cap drop logged) + **invariant: vault nodes never project to ANY CLAUDE.md** — CLAUDE.md is git-tracked/pushable and vault is never-pushed (MEM-13), so only `substrate=shared` behavioral nodes project. **Depth:** decisions/claude-md-projection.md + DESIGN.md §6a.4.
 
 ### MEM-21 · Tagging model = emergent + reconciler-normalized (no fixed taxonomy)  [Locked 2026-06-22]
 **Decision:** node/source tags + entity labels (concepts/people/products) are **free-form at capture**; the reconciler **normalizes synonyms into an emergent canonical vocabulary** and maintains it over time (alongside cluster detection). **No hand-authored fixed keyword taxonomy** — and no pre-build effort authoring keywords.

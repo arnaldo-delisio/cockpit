@@ -1,6 +1,6 @@
 # Cockpit Memory Layer — Canonical Design
 
-**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20). Build not started.
+**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20; 2026-06-22 blocking-spec lock — concrete build formats in §6a). Build not started.
 **Source of decisions:** `~/.cockpit/DECISIONS.md` (MEM-*, TOOL-*, BUILD-*). This doc is the integrated spec of *how the memory layer works*; DECISIONS holds the choice-by-choice trail + rejected alternatives; `log/` holds the chronology.
 **Scope of this doc:** the memory layer only. Tools, skills, `~/CLAUDE.md` orchestration, and the Hermes↔Claude handoff are separate deep dives.
 
@@ -64,6 +64,8 @@ Every cell of the grid exists:
 - `substrate` — **immutable** provenance tag (`shared` | `vault:<scope>`); see §6.
 - `schema_version` — for lazy migration as the schema evolves.
 
+**Concrete file format → §6a.1** (this list is the conceptual schema; §6a.1 is the implementable YAML+prose template + the field-ownership split).
+
 **Tagging / vocabulary (MEM-21).** Tags + entity labels (concepts/people/products) are **free-form at capture**; the reconciler **normalizes synonyms into an emergent canonical vocabulary** (no hand-authored fixed taxonomy). Semantic retrieval (§7) + emergent `cluster`s + wikilinks make a controlled vocab unnecessary — the reconciler maintains *coherence* (the real need) as part of its self-improvement pass (§10). Revisit only if retrieval underperforms.
 
 ---
@@ -95,7 +97,7 @@ The reconciler is also the **sole writer of the "managed regions" of CLAUDE.md f
 - **Scope routing (mandatory):** a node promotes only into the CLAUDE.md of *its own scope* — global → `~/CLAUDE.md`; cockpit → `~/.cockpit`'s CLAUDE.md; project/client → that project's CLAUDE.md. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules). A `vault:<scope>` node never projects to a file with a wider load surface than its own scope (§6 cross-substrate-promotion-forbidden).
 - **One home (DOC-1):** the graph node is the home; the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited. The hand-authored skeleton (BUILD-2) lives in a separate block of the same file. Edit the rule → edit the node → next reconciler run refreshes the projection.
 
-This is the **self-evolving-CLAUDE.md mechanism** — one distiller (the reconciler), not a second external miner, so `headroom learn` is retired (TOOL-2). Depth: `decisions/claude-md-projection.md`.
+This is the **self-evolving-CLAUDE.md mechanism** — one distiller (the reconciler), not a second external miner, so `headroom learn` is retired (TOOL-2). **Concrete fence contract → §6a.4.** Depth: `decisions/claude-md-projection.md`.
 
 ---
 
@@ -112,6 +114,97 @@ Confidential client data must never reach the shared graph or any third party. (
 - **Cross-substrate promotion forbidden** — shared→vault is read-only lookup at most; vault→shared never.
 
 This closes the five leak paths the review found: commingled logs, dreaming-pattern leakage, traversal crossing, subagent in-context vault content, and retrieval-engine cross-substrate contamination (vault nodes leaking into the shared workspace).
+
+---
+
+## 6a. Locked build formats (node · substrate · bootstrap · CLAUDE.md fence)
+
+The concrete byte-level formats that realize **MEM-11 / MEM-6 / MEM-13 / MEM-20** — the four specs that had to be locked before paths can be laid (STATE pre-crystallization checklist item 3, 2026-06-22). Conceptual decisions stay in §4/§5/§6; this section is the implementable contract.
+
+### 6a.1 Node template (realizes MEM-11)
+
+One markdown file per node in the flat pool `knowledge/nodes/<id>.md`. **Filename = `id` = wikilink target** (`[[<id>]]`) — same kebab-slug convention as the existing `MEMORY.md` index. YAML frontmatter + distilled-prose body:
+
+```markdown
+---
+id: <kebab-slug>            # = filename; the wikilink target
+title: <human title>
+type: knowledge | identity | feedback | log-derived
+claim: fact | inference     # `fact` REQUIRES `citation` else reconciler downgrades to inference (MEM-9)
+substrate: shared | vault:<scope>   # immutable hard wall, stamped at write boundary (§6a.2)
+scope: global | cockpit | <venture> | <client> | personal
+sensitivity: public | internal | confidential   # SOFT handling hint only — `substrate` is the hard wall
+centrality: 0.0-1.0         # reconciler-computed; drives retrieval priority + CLAUDE.md promotion
+cluster: <emergent-label>   # reconciler-assigned community
+tags: [free-form]           # emergent, reconciler-normalized (MEM-21)
+entities:                   # free-form labels, reconciler-normalized
+  concepts: [...]
+  people: [...]
+  products: [...]
+citation: <log-hash | url>  # required iff claim: fact
+schema_version: 1
+created: <ISO8601>
+updated: <ISO8601>          # reconciler
+last_synced: <ISO8601>      # retrieval-engine cache freshness (§7)
+---
+
+<distilled prose — clean enough for the engine to embed (§13 RRF requires clean node prose).>
+
+Links: [[other-node]], [[another-node]]
+```
+
+**Ownership split.** Capture/staging stamps **mechanically**: `substrate`, `scope`, `created`, raw `claim`+`citation`. The reconciler (sole writer, §5) owns everything else — `centrality`, `cluster`, `tags`/`entities` normalization, `claim` downgrade, `updated`, `last_synced`. Agents never hand-set centrality/cluster.
+
+**`sensitivity` vs `substrate`.** `substrate` is the mechanical, immutable, fail-closed enforcement wall (§6a.2) — it alone gates the shared/vault split. `sensitivity` is a soft, reconciler-populated handling hint (e.g. keep `confidential` out of casual recall) layered *inside* a substrate; kept for schema completeness (MEM-11) but **optional to populate, never load-bearing for walling**. If it earns no use, `schema_version` retires it lazily (no churn).
+
+### 6a.2 Substrate tag (realizes MEM-6)
+
+Grammar: `substrate := "shared" | "vault:" <scope>`. Carried on **every** `sources/` frontmatter, staging entry, and node.
+
+- **Stamped at the write-API boundary** (capture hook + staging-append API), derived **mechanically** from the session's scope + the input's origin — never from content judgment, never by an agent (dumb capture, MEM-16).
+- **Immutable.** No rewrite path for the field; a correction is a new entry that supersedes (git is the trail).
+- **Fail-closed default.** If scope can't be determined mechanically, stamp **`vault:unknown`** — never default to `shared`. A mis-walled secret is unrecoverable; a mis-walled public fact is a cheap reclassification. *(New invariant — locked walling default.)*
+- **Reconciler invariants:** `vault:<scope>` reconciles only into that scope's vault graph + that scope's isolated engine workspace; `shared` → shared graph + shared workspace; cross-substrate promotion forbidden (vault→shared never; shared→vault read-only lookup at most). (§6.)
+
+### 6a.3 Bootstrap (realizes MEM-13; graduates the §13 cold-start items)
+
+One **idempotent** operation lays the tree (safe to re-run; creates only what's missing):
+
+```
+~/.cockpit/memory/
+├── knowledge/
+│   ├── nodes/          # flat pool — all scopes; scope lives in frontmatter
+│   └── INDEX.md        # master index, reconciler-generated (§7 tier: hot cache → INDEX → deep wiki)
+└── scopes/
+    ├── global/{identity,log,staging,sources}/        # shared scope — NO vault (nothing confidential is global)
+    ├── cockpit/{identity,log,staging,sources}/
+    ├── content/{identity,log,staging,vault,sources}/
+    └── job-search/{identity,log,staging,vault,sources}/
+```
+
+- **Seed set = the live scopes only** (`global, cockpit, content, job-search` — live-work-focus memory). Dormant ventures/clients are materialized by the **same idempotent function** at re-onboarding (OPEN-7) — never blanket-seeded (clean-start, MEM-15).
+- **`global` has no `vault/`** — confidential data is always per-client/venture-scoped; nothing confidential is global.
+- **Vault gitignore (MEM-13 vault rule).** `~/.cockpit/memory/` is inside the cockpit git repo, so bootstrap MUST add `memory/scopes/*/vault/` to `~/.cockpit/.gitignore` — vault is local-only, never in a tree with a push remote.
+- **`INDEX.md`** = reconciler-generated master index: high-`centrality` god-nodes grouped by `cluster`, one-line summary + `[[wikilink]]` each. Regenerated each run; never hand-edited.
+- **Append-only bootstrap mode** until ≥1 centroid node per cluster exists — the reconciler runs capture+append only (no GC, no heavy rewrite) so it doesn't thrash a near-empty graph. Seeds: `soul.md` (global identity) + a per-scope identity stub.
+
+### 6a.4 CLAUDE.md projection fence (realizes MEM-20)
+
+The reconciler's managed region inside any target `CLAUDE.md`:
+
+```
+<!-- managed:reconciler:begin schema=1 -->
+## Rules (projected from memory — do not edit; edit the source node)
+- <rule text> [[source-node]]
+...
+<!-- managed:reconciler:end -->
+```
+
+- **Strict fence discipline.** The reconciler reads/replaces ONLY the bytes between `:begin` and `:end`; everything outside (the BUILD-2 hand-authored skeleton) is never touched. No fence present → append one at EOF after a blank line. Present → full-replace the interior (idempotent).
+- **Backlink per rule** (`[[source-node]]`) — the node is the home (DOC-1); the block is a regenerable cache.
+- **Cap** ≤ BUILD-4's 10–15 `## Rules`; over-cap → highest-`centrality` wins, the rest stay retrieval-gated; the audit diff (§10) records what was dropped (no silent truncation).
+- **Scope routing.** A node projects ONLY into its own scope's CLAUDE.md (global→`~/CLAUDE.md`; cockpit→`~/.cockpit/CLAUDE.md`; project/client→that project's).
+- **Vault never projects.** Only `substrate=shared` behavioral nodes (`type ∈ {identity, feedback}`) project. A `vault:<scope>` node is **never** projected to any CLAUDE.md — CLAUDE.md is a git-tracked, pushable surface and vault is never-pushed (MEM-13). *(New invariant — sharper than §5's "no wider load surface": CLAUDE.md's pushability makes it always wider than any vault.)*
 
 ---
 
@@ -190,8 +283,7 @@ No rivalry — roles assigned (MEM-15):
 - Session **heartbeat** for dead-session detection.
 - Staging **growth cap** (block + warn, never silent drop).
 - Shared **Kanban board write-locking**.
-- **Cold-start** bootstrap sequence (seed soul.md, ≥1 centroid node per cluster, append-only bootstrap mode until threshold).
-- Exact scope **directory paths** + vault layout.
+- ~~**Cold-start** bootstrap sequence~~ + ~~exact scope **directory paths** / vault layout~~ — **LOCKED 2026-06-22 → §6a.3** (idempotent bootstrap, seed-live-scopes, vault gitignore, append-only mode, INDEX.md).
 - **Hybrid-retrieval merge function** (MEM-19, from agentmemory grading): §7 leaves *how* the ranked lists combine unspecified. Where WE own the merge (engine semantic results × wikilink-traversal results), fuse the already-ranked lists with **RRF — reciprocal rank fusion, k=60** (standard rank-list fusion). Does NOT violate "buy retrieval": the engine still owns embeddings/vector retrieval internally; we only re-rank *across* the lists it returns. Sole requirement on us: each node carries clean distilled prose (the engine ingests it) — we build no vector index ourselves.
 - **Identity-node naming — already settled by §3** (node = TYPE × SCOPE grid cell); do NOT adopt agentmemory's flat 8-slot list wholesale — it's the single-axis model §3 rejected, and most slots aren't identity anyway (`tool_guidelines`→skills `## Rules`; `project_context`→§7 volatile/pointed-to; `pending_items`→Kanban/log; `session_patterns`→§8 dreaming output). At most cherry-pick `persona · user_preferences · guidance` as sub-fields *inside* an identity node. Reference only, low priority.
 
