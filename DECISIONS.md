@@ -28,6 +28,7 @@ add an analysis file + a row here. Map:
 | `decisions/headroom-eval.md` | TOOL-2 |
 | `decisions/doc-architecture.md` | DOC-1 |
 | `decisions/claude-md-projection.md` | MEM-20 |
+| `decisions/codex-integration.md` | TOOL-7 |
 
 ---
 
@@ -198,6 +199,12 @@ add an analysis file + a row here. Map:
 **Why — as store of record:** native = flat single-axis model rejected by MEM-2; Hermes = SQLite DB rejected by MEM-10. **As a feeder:** native **couples write+recall** (can't capture without its own recall injection → a second recall system fighting ours), its disable-bug **#63903 taxes ~11–16k tokens/session**, and its frontmatter is undocumented/internal (drift risk); both are **model-decided + lossy**, not the deterministic session-boundary capture our design needs. The build it would save is a small hook script — false economy against losing control.
 **Salvage (fair):** use native's `autoMemoryDirectory`/disable controls at the day-0 cutover; **bridge Hermes as a staging *writer*** (its existing write-gate/approval already fits the stage→reconcile model), not a store we read. **Confirms** MEM-16 rather than overturning it. **Depth:** log 2026-06-22 (two research agents: CC memory feature + Hermes `memory_tool.py`).
 
+### TOOL-7 · Codex inside Claude Code = official plugin for code-research; MCP deferred  [Locked (direction) 2026-06-22; adoption gated on trial]
+**Decision:** add the **official `codex-plugin-cc`** plugin, scoped to **codebase research (repo investigation, implementation tracing, bug investigation) + cross-family adversarial review** — *not* web research. Defer the **MCP route**; when adopted, prefer the **official `codex mcp-server`** built-in over community wrappers (`tuannvm`/`cexll`). Adoption gated on a 30-min trial (kept only if it gives signal Claude-alone doesn't).
+**Why:** plugin = lowest-setup, official, footgun-free; a different-model-family second opinion is the real value-add. MCP = autonomous per-call delegation (Claude's tool-loop, fine-grained sandbox/model/effort) — premature until a workflow needs it (OPEN-6 cross-family dispatch). *Plugin puts Codex behind your keystrokes; MCP puts it behind Claude's tool-use.*
+**Local-config dependencies (explicit):** both shell out to the local `@openai/codex` CLI + **share the same ChatGPT/Codex rate window as Hermes** (TOOL-3); **web/external research is OFF by default + config-gated** (`network_access=true`, live `web_search`) and pre-cached/stale — so **Codex is for code, not the web** (native Claude WebSearch + context-mode already do web better). Headless MCP must use `approval=never`/`on-failure` or it deadlocks; the community-wrapper "fix" (`danger-full-access` globally) is a footgun to avoid.
+**Rejected/skipped:** Codex for broad web research (config-dependent, worse than native); community MCP wrappers as the entry point (drift + footgun). **Relates:** OPEN-6. **Depth:** `decisions/codex-integration.md` (full comparison, trial plan, red-flag list, sources).
+
 ---
 
 ## Build & process
@@ -220,7 +227,7 @@ add an analysis file + a row here. Map:
 ### DOC-1 · Documentation model = one fact, one home  [Locked 2026-06-21]
 **Decision:** four docs, no overlap — `STATE.md` (roadmap/status) · `DECISIONS.md` (terse decision ledger + open decisions) · `decisions/<topic>.md` (deep analysis / content goldmine) · `memory/DESIGN.md` + siblings (integrated spec) · `log/` (chronology). A decision lands in DECISIONS first; STATE gets a one-line pointer only if the roadmap moves. Global `~/CLAUDE.md` stays a thin pointer to STATE (map lives in STATE header; behavioral rule in working-rhythm memory).
 **Why:** STATE had merged roadmap + decisions + research and the same facts diverged across STATE/DESIGN (DESIGN stayed stale on the retrieval engine). One-fact-one-home (our memory doctrine applied to our docs) kills the divergence; the split index+analysis keeps the ledger scannable while preserving reasoning as mineable content.
-**Rejected:** full-ADR ledger entries (too much ceremony); one rich DECISIONS.md (grows to 800+ lines, buries content); folding decisions into DESIGN.md (no home for cross-cutting operating-model/tooling decisions). **Depth:** decisions/doc-architecture.md.
+**Rejected:** full-ADR ledger entries (too much ceremony); one rich DECISIONS.md (grows to 800+ lines, buries content); folding decisions into DESIGN.md (no home for cross-cutting operating-model/tooling decisions). **No standalone `research/` folder [2026-06-22]:** research earns a home only by *becoming* a decision — its valuable residue lives in `decisions/<topic>.md`; raw research that led to no decision isn't separately archived. **Depth:** decisions/doc-architecture.md.
 
 ---
 
