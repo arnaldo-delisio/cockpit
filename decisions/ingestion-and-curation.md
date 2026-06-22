@@ -2,10 +2,13 @@
 topic: ingestion and curation — how sources enter the brain and how it stays current
 decisions: [MEM-14, MEM-16, MEM-17, MEM-18, MEM-21, MEM-22]
 status: locked
+amended_by: MEM-23
 date: 2026-06-21 (capture-is-dumb clarification + MEM-21/22 added 2026-06-22)
 ---
 
 # Ingestion + Curation — Decision Analysis
+
+> **Amended 2026-06-22 (MEM-23):** the `substrate` tag and vault routing below ("`sources/` beside its vault", "client→`vault/sources/`", "substrate tag immutable") are **retired** — capture stamps `scope` only (organization, not security); isolation moved to the VM boundary. The capture-is-dumb model, the three ingestion modes, the salience signals (MEM-22), and the no-fixed-taxonomy tagging (MEM-21) **stand**.
 
 ## TL;DR
 

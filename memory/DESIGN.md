@@ -1,6 +1,6 @@
 # Cockpit Memory Layer — Canonical Design
 
-**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20; 2026-06-22 blocking-spec lock — concrete build formats in §6a). Build not started.
+**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20; 2026-06-22 blocking-spec lock — concrete build formats in §6a; 2026-06-22 walling layer retired — isolation moved to the VM boundary, MEM-23). Build not started.
 **Source of decisions:** `~/.cockpit/DECISIONS.md` (MEM-*, TOOL-*, BUILD-*). This doc is the integrated spec of *how the memory layer works*; DECISIONS holds the choice-by-choice trail + rejected alternatives; `log/` holds the chronology.
 **Scope of this doc:** the memory layer only. Tools, skills, `~/CLAUDE.md` orchestration, and the Hermes↔Claude handoff are separate deep dives.
 
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-One memory substrate that a **fleet of agents** — Hermes capability-agents (content, job-apps, …), the Claude Code builder, and their Sonnet/Haiku subagents — all read and write, **without drift and without cross-client leak.** Knowledge cross-pollinates across contexts; confidential client data is walled.
+One memory substrate that a **fleet of agents** — Hermes capability-agents (content, job-apps, …), the Claude Code builder, and their Sonnet/Haiku subagents — all read and write, **without drift.** Knowledge cross-pollinates freely; confidential client data is isolated at the VM boundary, not inside the graph (MEM-23).
 
 ---
 
@@ -17,7 +17,7 @@ One memory substrate that a **fleet of agents** — Hermes capability-agents (co
 - **Graph, not tree.** Knowledge is a unified, cross-linked, self-improving graph (Karpathy "LLM OS"). Retrieved by search, not by folder path.
 - **Own the substrate.** Store of record = distilled, wikilinked **markdown we own** + git. No third party holds the brain.
 - **Buy retrieval, run it local.** A swappable local engine (AnythingLLM, MEM-15) sits *on top of* the owned markdown — embeddings + retrieval 100% local, no third party in the retrieval path.
-- **Walls are mechanical, not trusted.** Enforced by access-control + provenance tags, never by prompt instruction.
+- **Isolation is structural, not in-graph.** Confidentiality is enforced at the VM boundary (one trust domain per VM, MEM-23), never by in-graph tags or prompt instruction. The main graph is one non-confidential trust domain.
 - **One writer for truth.** Many agents observe; a single reconciler writes canonical nodes.
 - **Distill, don't dump.** Resources are compressed to durable facts before they enter the brain.
 
@@ -42,8 +42,8 @@ Every cell of the grid exists:
 | knowledge  | general know-how  | venture know-how   | client know-how       | personal        |
 | log        | cockpit diary     | venture diary      | client diary          | personal diary  |
 
-- **"Vault" is not a type** — it is the **confidential cells** of a scope (mostly the per-client column).
-- **Shared knowledge graph** = the union of all **non-confidential** knowledge cells, cross-linked across scopes. This is what cross-pollinates.
+- **SCOPE is organization, not a wall** (MEM-23) — it marks *who a node is about*. Confidential clients are isolated by VM, not by an in-graph "vault" cell.
+- **Shared knowledge graph** = the union of all knowledge cells in the VM, cross-linked across scopes. This is what cross-pollinates.
 - **`soul.md`** = the **operator meta-identity** (Arn / Hermes) at global scope. **Per-context identity lives inside each scope** — so "identity is per-context, never global" holds: the global file is the *operator's*, not any context's.
 
 ---
@@ -51,17 +51,16 @@ Every cell of the grid exists:
 ## 4. Storage & ownership
 
 - **Store of record:** distilled wikilinked markdown files + **git** underneath (history, rollback, audit). Local-first, embedded — no cloud DB (no Turso) for the store of record.
-- **Layout (MEM-13):** knowledge graph = one flat pool `~/.cockpit/memory/knowledge/nodes/` (scope = node frontmatter, master-index over the pool); memory substrate = centralized `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,vault,sources}/`. `sources/` = raw capture layer (§8); `vault/` = local-only + gitignored. Each project's co-located `CLAUDE.md` carries a one-line pointer to its scope.
+- **Layout (MEM-13):** knowledge graph = one flat pool `~/.cockpit/memory/knowledge/nodes/` (scope = node frontmatter, master-index over the pool); memory substrate = centralized `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`. `sources/` = raw capture layer (§8). Each project's co-located `CLAUDE.md` carries a one-line pointer to its scope.
 - **Graph structure** = wikilinks (`[[ ]]`, Obsidian-navigable) between markdown nodes.
 
 ### Node schema
-`type · fact|inference · centrality · cluster · sensitivity · substrate · scope · schema_version`
+`type · fact|inference · centrality · cluster · scope · schema_version`
 
 - `fact|inference` — provenance/confidence. A `fact` node **requires a citation** (log-entry hash or URL) or is auto-downgraded to `inference`.
 - `centrality` — "god-node" ranking; drives retrieval priority.
 - `cluster` — community membership; shrinks retrieval search space.
-- `sensitivity` — walling signal.
-- `substrate` — **immutable** provenance tag (`shared` | `vault:<scope>`); see §6.
+- `scope` — organization (which venture/client a node is about); not a security boundary (MEM-23).
 - `schema_version` — for lazy migration as the schema evolves.
 
 **Concrete file format → §6a.1** (this list is the conceptual schema; §6a.1 is the implementable YAML+prose template + the field-ownership split).
@@ -74,7 +73,7 @@ Every cell of the grid exists:
 
 Concurrent writes to shared files corrupt and contradict. Solution: **nobody writes canonical nodes except one reconciler.**
 
-1. **Agents append** observations to a **session-anchored staging inbox** — append-only, each agent owns its lane, so appends never collide. Format: Haiku summarizes each turn → bullets → date-partitioned files tagged with a session anchor (provenance) + `substrate` tag.
+1. **Agents append** observations to a **session-anchored staging inbox** — append-only, each agent owns its lane, so appends never collide. Format: Haiku summarizes each turn → bullets → date-partitioned files tagged with a session anchor (provenance) + scope.
 2. **One reconciler** is the **sole writer** of canonical nodes and runs in two tempos: lightweight ingestion bookkeeping continuously at capture boundaries, and the heavy distillation / synthesis pass nightly. It reads staging/logs/sources → fact-checks → cross-links → rewrites → GC.
 3. **Git underneath** for history/rollback. Git **plumbing** (add/commit/push) = **Haiku tier**; git **judgment** (rare by design) escalates.
 
@@ -94,32 +93,26 @@ The reconciler is also the **sole writer of the "managed regions" of CLAUDE.md f
 
 - **What promotes:** high-`centrality` behavioral nodes only — `type ∈ {identity, feedback}` (operating rules). Facts/`knowledge` stay retrieval-gated and never promote.
 - **Gate + cap:** `when_to_use` + an adversarial structure/accuracy lens decides survivors; the BUILD-4 `## Rules` 10–15 cap keeps the always-load layer thin (BUILD-2).
-- **Scope routing (mandatory):** a node promotes only into the CLAUDE.md of *its own scope* — global → `~/CLAUDE.md`; cockpit → `~/.cockpit`'s CLAUDE.md; project/client → that project's CLAUDE.md. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules). A `vault:<scope>` node never projects to a file with a wider load surface than its own scope (§6 cross-substrate-promotion-forbidden).
+- **Scope routing (mandatory):** a node promotes only into the CLAUDE.md of *its own scope* — global → `~/CLAUDE.md`; cockpit → `~/.cockpit`'s CLAUDE.md; project/client → that project's CLAUDE.md. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules).
 - **One home (DOC-1):** the graph node is the home; the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited. The hand-authored skeleton (BUILD-2) lives in a separate block of the same file. Edit the rule → edit the node → next reconciler run refreshes the projection.
 
 This is the **self-evolving-CLAUDE.md mechanism** — one distiller (the reconciler), not a second external miner, so `headroom learn` is retired (TOOL-2). **Concrete fence contract → §6a.4.** Depth: `decisions/claude-md-projection.md`.
 
 ---
 
-## 6. Walling — read + write
+## 6. Trust boundary = the VM (MEM-23)
 
-Confidential client data must never reach the shared graph or any third party. (The retrieval engine is local — MEM-15 — so there is no third-party retrieval surface; the walls below still hold the shared/vault boundary *within* the local substrate.) Two enforcement halves:
+Confidentiality is enforced at the **VM boundary**, not inside the graph. One trust domain per VM: the main VM holds only non-confidential work in one fully-shared graph (no `substrate` tag, no `vault/` dirs, no per-scope read-keys or engine-workspace isolation). A confidential client gets a **separate VM running a clone of the same cockpit**, organized when it arrives (OPEN-7) — not designed now.
 
-**Read side — "keys not prompts":** access enforced by OS file permissions + scoped credentials, never by prompt discipline. An agent bound to client-A **lacks path/key access** to client-B. Scope ("the keys") is **derived from one permission source-of-truth** (shared drive / OAuth); the local cache is a **read-only mirror**. Lose source access → memories stop pulling automatically. Subagents inherit the parent's reduced scope.
+**The security model is data-flow discipline:** confidential data never leaves its VM — no shared graph, no shared semantic index, no shared git remote, no copy-paste back into the main cockpit. The VM is only as good as that discipline. The only forward-looking cost paid now is keeping the cockpit **clone-clean** (no hardcoded paths, secrets out of the tree, deps pinned) so the future VM is isolation-by-construction.
 
-**Write side — substrate-provenance:** an **immutable `substrate` tag** (`shared` | `vault:<scope>`) is stamped on every log entry, staging entry, and node **at the write-API boundary** (not by agent judgment). Then:
-- Reconciler **hard-rejects** vault-tagged material from the shared graph — vault material reconciles only into its own vault.
-- **Retrieval-engine indexing** ingests `substrate=shared` nodes into the shared workspace and `substrate=vault:<scope>` nodes into that scope's isolated workspace **only** — never commingled.
-- **Dreaming + graph traversal** are OS-perm-scoped to their substrate.
-- **Cross-substrate promotion forbidden** — shared→vault is read-only lookup at most; vault→shared never.
-
-This closes the five leak paths the review found: commingled logs, dreaming-pattern leakage, traversal crossing, subagent in-context vault content, and retrieval-engine cross-substrate contamination (vault nodes leaking into the shared workspace).
+*Why this replaced intra-graph walling: an in-process tag is fragile (one missing filter = cross-tenant leak); a VM is a structural boundary, zero-leak by construction. The split-substrate machinery was load-bearing complexity for a confidential client who doesn't yet exist (YAGNI). Full trail: `decisions/walling.md` (superseded).*
 
 ---
 
-## 6a. Locked build formats (node · substrate · bootstrap · CLAUDE.md fence)
+## 6a. Locked build formats (node · bootstrap · CLAUDE.md fence)
 
-The concrete byte-level formats that realize **MEM-11 / MEM-6 / MEM-13 / MEM-20** — the four specs that had to be locked before paths can be laid (STATE pre-crystallization checklist item 3, 2026-06-22). Conceptual decisions stay in §4/§5/§6; this section is the implementable contract.
+The concrete byte-level formats that realize **MEM-11 / MEM-13 / MEM-20** — the specs that had to be locked before paths can be laid (STATE pre-crystallization checklist item 3, 2026-06-22). Conceptual decisions stay in §4/§5/§6; this section is the implementable contract. *(The substrate-tag spec was deleted with the walling layer — MEM-23.)*
 
 ### 6a.1 Node template (realizes MEM-11)
 
@@ -129,11 +122,9 @@ One markdown file per node in the flat pool `knowledge/nodes/<id>.md`. **Filenam
 ---
 id: <kebab-slug>            # = filename; the wikilink target
 title: <human title>
-type: knowledge | identity | feedback | log-derived
+type: knowledge | identity | feedback   # feedback = behavioral lesson the reconciler mints from MEM-22 markers
 claim: fact | inference     # `fact` REQUIRES `citation` else reconciler downgrades to inference (MEM-9)
-substrate: shared | vault:<scope>   # immutable hard wall, stamped at write boundary (§6a.2)
-scope: global | cockpit | <venture> | <client> | personal
-sensitivity: public | internal | confidential   # SOFT handling hint only — `substrate` is the hard wall
+scope: global | cockpit | <venture> | <client> | personal   # organization, not a wall (MEM-23)
 centrality: 0.0-1.0         # reconciler-computed; drives retrieval priority + CLAUDE.md promotion
 cluster: <emergent-label>   # reconciler-assigned community
 tags: [free-form]           # emergent, reconciler-normalized (MEM-21)
@@ -153,18 +144,9 @@ last_synced: <ISO8601>      # retrieval-engine cache freshness (§7)
 Links: [[other-node]], [[another-node]]
 ```
 
-**Ownership split.** Capture/staging stamps **mechanically**: `substrate`, `scope`, `created`, raw `claim`+`citation`. The reconciler (sole writer, §5) owns everything else — `centrality`, `cluster`, `tags`/`entities` normalization, `claim` downgrade, `updated`, `last_synced`. Agents never hand-set centrality/cluster.
+**Ownership split.** Capture/staging stamps **mechanically**: `scope`, `created`, raw `claim`+`citation`. The reconciler (sole writer, §5) owns everything else — `centrality`, `cluster`, `tags`/`entities` normalization, `claim` downgrade, `updated`, `last_synced`. Agents never hand-set centrality/cluster.
 
-**`sensitivity` vs `substrate`.** `substrate` is the mechanical, immutable, fail-closed enforcement wall (§6a.2) — it alone gates the shared/vault split. `sensitivity` is a soft, reconciler-populated handling hint (e.g. keep `confidential` out of casual recall) layered *inside* a substrate; kept for schema completeness (MEM-11) but **optional to populate, never load-bearing for walling**. If it earns no use, `schema_version` retires it lazily (no churn).
-
-### 6a.2 Substrate tag (realizes MEM-6)
-
-Grammar: `substrate := "shared" | "vault:" <scope>`. Carried on **every** `sources/` frontmatter, staging entry, and node.
-
-- **Stamped at the write-API boundary** (capture hook + staging-append API), derived **mechanically** from the session's scope + the input's origin — never from content judgment, never by an agent (dumb capture, MEM-16).
-- **Immutable.** No rewrite path for the field; a correction is a new entry that supersedes (git is the trail).
-- **Fail-closed default.** If scope can't be determined mechanically, stamp **`vault:unknown`** — never default to `shared`. A mis-walled secret is unrecoverable; a mis-walled public fact is a cheap reclassification. *(New invariant — locked walling default.)*
-- **Reconciler invariants:** `vault:<scope>` reconciles only into that scope's vault graph + that scope's isolated engine workspace; `shared` → shared graph + shared workspace; cross-substrate promotion forbidden (vault→shared never; shared→vault read-only lookup at most). (§6.)
+**`feedback` nodes.** Behavioral lessons (corrections, confirmed approaches) are minted by the reconciler from MEM-22 salience markers (`#good`/`#bad` sentinels + inferred correction/decision spans) — not hand-typed at capture. They are the projection input for MEM-20 alongside `identity` nodes.
 
 ### 6a.3 Bootstrap (realizes MEM-13; graduates the §13 cold-start items)
 
@@ -176,15 +158,14 @@ One **idempotent** operation lays the tree (safe to re-run; creates only what's 
 │   ├── nodes/          # flat pool — all scopes; scope lives in frontmatter
 │   └── INDEX.md        # master index, reconciler-generated (§7 tier: hot cache → INDEX → deep wiki)
 └── scopes/
-    ├── global/{identity,log,staging,sources}/        # shared scope — NO vault (nothing confidential is global)
+    ├── global/{identity,log,staging,sources}/        # shared knowledge scope
     ├── cockpit/{identity,log,staging,sources}/
-    ├── content/{identity,log,staging,vault,sources}/
-    └── job-search/{identity,log,staging,vault,sources}/
+    ├── content/{identity,log,staging,sources}/
+    └── job-search/{identity,log,staging,sources}/
 ```
 
 - **Seed set = the live scopes only** (`global, cockpit, content, job-search` — live-work-focus memory). Dormant ventures/clients are materialized by the **same idempotent function** at re-onboarding (OPEN-7) — never blanket-seeded (clean-start, MEM-15).
-- **`global` has no `vault/`** — confidential data is always per-client/venture-scoped; nothing confidential is global.
-- **Vault gitignore (MEM-13 vault rule).** `~/.cockpit/memory/` is inside the cockpit git repo, so bootstrap MUST add `memory/scopes/*/vault/` to `~/.cockpit/.gitignore` — vault is local-only, never in a tree with a push remote.
+- **No `vault/` dirs** — intra-graph walling is retired (MEM-23); the whole VM is one trust domain.
 - **`INDEX.md`** = reconciler-generated master index: high-`centrality` god-nodes grouped by `cluster`, one-line summary + `[[wikilink]]` each. Regenerated each run; never hand-edited.
 - **Append-only bootstrap mode** until ≥1 centroid node per cluster exists — the reconciler runs capture+append only (no GC, no heavy rewrite) so it doesn't thrash a near-empty graph. Seeds: `soul.md` (global identity) + a per-scope identity stub.
 
@@ -204,19 +185,19 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 - **Backlink per rule** (`[[source-node]]`) — the node is the home (DOC-1); the block is a regenerable cache.
 - **Cap** ≤ BUILD-4's 10–15 `## Rules`; over-cap → highest-`centrality` wins, the rest stay retrieval-gated; the audit diff (§10) records what was dropped (no silent truncation).
 - **Scope routing.** A node projects ONLY into its own scope's CLAUDE.md (global→`~/CLAUDE.md`; cockpit→`~/.cockpit/CLAUDE.md`; project/client→that project's).
-- **Vault never projects.** Only `substrate=shared` behavioral nodes (`type ∈ {identity, feedback}`) project. A `vault:<scope>` node is **never** projected to any CLAUDE.md — CLAUDE.md is a git-tracked, pushable surface and vault is never-pushed (MEM-13). *(New invariant — sharper than §5's "no wider load surface": CLAUDE.md's pushability makes it always wider than any vault.)*
+- **What projects.** Only behavioral nodes (`type ∈ {identity, feedback}`) project; facts/`knowledge` stay retrieval-gated and never promote.
 
 ---
 
 ## 7. Retrieval
 
 **Hybrid, complementary by level** (5-level taxonomy: exact → topic → semantic → relationship-chain → graph-inference):
-- **Semantic (≈L3):** the **local retrieval engine** (AnythingLLM, MEM-15) over the owned markdown — native zero-network ONNX embedder (`all-MiniLM-L6-v2`), embeddings + retrieval 100% local. **Both layers use the same engine, in isolated workspaces:** the shared knowledge graph and each `vault:<scope>` get their own workspace (no commingling — §6). A swappable cache → low lock-in (breaks = lose convenience, not knowledge; the spine is engine-independent owned markdown).
-- **Relationship / inference (≈L4–5):** **wikilink graph traversal** over the owned markdown (respecting substrate boundaries).
+- **Semantic (≈L3):** the **local retrieval engine** (AnythingLLM, MEM-15) over the owned markdown — native zero-network ONNX embedder (`all-MiniLM-L6-v2`), embeddings + retrieval 100% local. One shared graph, one workspace (no per-vault isolation — MEM-23). A swappable cache → low lock-in (breaks = lose convenience, not knowledge; the spine is engine-independent owned markdown).
+- **Relationship / inference (≈L4–5):** **wikilink graph traversal** over the owned markdown.
 - **Tiering for token discipline:** hot cache → master index → deep wiki (~40K baseline). Evergreen knowledge → graph; volatile/live data (project state, client meeting notes) → **pointed-to, not ingested**.
 - **Session hygiene (separate concern):** context-mode handles in-session context-window protection — it is **not** a memory store of record (MEM-15). Never index canonical notes into context-mode.
 
-**Engine choice (MEM-15):** AnythingLLM, one local engine for both shared + vault — decided. Chosen over NotebookLM (dropped — TOOL-1) and Open Notebook (runner-up). Build **smoke-tests AnythingLLM on the real machine** (RAM-tight) before integration, with **Open Notebook as the named fallback** if it fails — a verification step, not an open choice. Does not block the memory build: the store of record is owned markdown and the engine is swappable on top.
+**Engine choice (MEM-15):** AnythingLLM, one local engine over one shared graph — decided. Chosen over NotebookLM (dropped — TOOL-1) and Open Notebook (runner-up). Build **smoke-tests AnythingLLM on the real machine** (RAM-tight) before integration, with **Open Notebook** or the simpler **direct-ONNX + sqlite-vec + ripgrep** as named fallbacks if it fails — a verification step, not an open choice. Does not block the memory build: the store of record is owned markdown and the engine is swappable on top.
 
 **Freshness:** owned markdown is truth, the retrieval engine is cache. Re-sync triggered post-reconciler-commit; per-document `last_synced`; queries in a stale window are flagged. (TTLs in backlog.)
 
@@ -224,17 +205,17 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 
 ## 8. Ingestion — capture + three modes
 
-**Capture layer (`sources/`, MEM-14).** Each scope has a `sources/` dir (beside `vault/`): verbatim inputs — transcripts, repo snapshots, docs, pastes — frontmattered (`type · title · source · captured · session_anchor · scope · substrate · status · distilled_into · concepts/people/products`), fully search-indexed so nothing is ever invisible. **Capture = intent, no engagement gate** — everything autosaves (`/watch` autosaves here), **provenance/scope-aware** tagged (mechanical — from the input's origin + the session's scope, not by reading content meaning; MEM-6): global-origin/public → `scopes/global/sources/` `substrate:shared`; client-origin/confidential-scope → that scope's `vault/sources/`. The **dream judges depth** by reading (full cross-linked node / one-line stub / leave-in-raw) — reading comprehension is the filter, no engagement metric; a wrong call self-corrects (find raw by search later → next run promotes). Memory is **freely mutable; git is the undo** — no tombstone ceremony, no scheduled space-GC (MEM-14, supersedes §10's tombstone language).
+**Capture layer (`sources/`, MEM-14).** Each scope has a `sources/` dir: verbatim inputs — transcripts, repo snapshots, docs, pastes — frontmattered (`type · title · source · captured · session_anchor · scope · status · distilled_into · concepts/people/products`), fully search-indexed so nothing is ever invisible. **Capture = intent, no engagement gate** — everything autosaves (`/watch` autosaves here), **scope-tagged** (mechanical — from the input's origin + the session's scope; organization not security, MEM-23). The **dream judges depth** by reading (full cross-linked node / one-line stub / leave-in-raw) — reading comprehension is the filter, no engagement metric; a wrong call self-corrects (find raw by search later → next run promotes). Memory is **freely mutable; git is the undo** — no tombstone ceremony, no scheduled space-GC (MEM-14, supersedes §10's tombstone language).
 
 1. **On-demand RAG** — pull at query time.
-2. **Proactive "dreaming"** — the nightly heavy distillation / synthesis pass of the reconciler reads every NEW source (since last run) + (substrate-scoped) logs + shared graph, triages, distills to earned depth, cross-links, surfaces suggestions unprompted. Output tagged `source=dreaming` at **lower trust rank**; novel suggestions go to a **pending-review queue**, not straight to canonical. Routing: judgment (triage/distill/cross-link/conflict) = Sonnet min, Opus for hard calls; Haiku = plumbing only (git, dedup-by-hash, mark-consumed). A cheap mechanical pass (Haiku / local Gemma / regex) first gathers the salience-flagged spans (MEM-22: errors, `#good`/`#bad` sentinels, corrections, decisions) into a compact digest; the expensive model (Sonnet/Opus) judges that digest instead of treating raw volume as the unit of work. It must also surface a small set of unmarked-but-likely-salient candidates, so forgotten sentinels do not create blind spots.
+2. **Proactive "dreaming"** — the nightly heavy distillation / synthesis pass of the reconciler reads every NEW source (since last run) + logs + shared graph, triages, distills to earned depth, cross-links, surfaces suggestions unprompted. Output tagged `source=dreaming` at **lower trust rank**; novel suggestions go to a **pending-review queue**, not straight to canonical. Routing: judgment (triage/distill/cross-link/conflict) = Sonnet min, Opus for hard calls; Haiku = plumbing only (git, dedup-by-hash, mark-consumed). A cheap mechanical pass (Haiku / local Gemma / regex) first gathers the salience-flagged spans (MEM-22: errors, `#good`/`#bad` sentinels, corrections, decisions) into a compact digest; the expensive model (Sonnet/Opus) judges that digest instead of treating raw volume as the unit of work. It must also surface a small set of unmarked-but-likely-salient candidates, so forgotten sentinels do not create blind spots.
 3. **Active elicitation ("grill me")** — pull tacit knowledge *out of the human* into the identity/knowledge layer by **relentless one-question-at-a-time interviewing** (recommend an answer per question; if the codebase can answer, look there instead of asking). Checkpoint each answer to structured markdown as you go. Output = discovery nodes + key decisions + Q&A log + **open-flags** (what the human couldn't answer). Open-flags feed the reconciler's **human-escalation queue** (§5). This is the input path for knowledge that no log or resource contains. Packaged as a skill (skills dive). Pattern source: Matt Pocock's `grill-me`.
 
 ---
 
 ## 9. Logging
 
-- **Automatic via hooks — there is no `/log` skill.** `session_end` + `pre-compaction` hooks capture the session into the scope's log/staging — **near-raw and judgment-free.** Capture *records*, it does not decide what matters. The scope/substrate stamp is derived **mechanically from session context** (which scope/project the session ran in), not by reading content. (`pre-compaction` ensures in-session observations aren't eaten by context compaction.)
+- **Automatic via hooks — there is no `/log` skill.** `session_end` + `pre-compaction` hooks capture the session into the scope's log/staging — **near-raw and judgment-free.** Capture *records*, it does not decide what matters. The scope stamp is derived **mechanically from session context** (which scope/project the session ran in), not by reading content. (`pre-compaction` ensures in-session observations aren't eaten by context compaction.)
 - **Raw is the source of truth.** Any Haiku summary at capture is a **lossy convenience index, never the only copy** — Haiku here is plumbing (write the file), never judging what's worth keeping (MEM-12). If a cheap summary dropped a buried correction, the reconciler would never see it; so capture preserves raw signal.
 - **All recognition + distillation is the reconciler's job** (§5, Sonnet/Opus): it reads the raw record and decides what's a durable rule/fact, frames it, dedupes, sets centrality, and promotes to CLAUDE.md/SOUL.md. Judgment is concentrated in the one place that can afford intelligence.
 - **Salience signals (MEM-22).** Capture also emits cheap **mechanical** markers flagging likely-high-value moments for the reconciler to prioritize (it still makes the final call) — four categories: **keep · correction · error · decision**. **Tier 1 = explicit sentinels** the user types — **`#good`** / **`#bad`** — collision-free, deterministic, highest-confidence (the human verdict). They are **priority overrides, not gates**: reviewed first, never auto-promoted on their own, still judged by the reconciler. **Tier 2 = inferred** (the structural + regex signals below), best-effort, and still active whether or not a sentinel was used. **Sentinel absence is neutral, never low-value.** The reconciler's nightly heavy pass must still surface some unmarked-but-likely-salient candidates as a safety-net sweep, so forgotten sentinels do not create blind spots. Grounded in what Claude Code exposes: **errors are structural** (`tool_result.is_error: true` / the `PostToolUseFailure` hook); **keep/correction/decision = regex over verbatim user text** (`UserPromptSubmit.prompt` or transcript `user.message.content`). Detection is pattern-matching, not judgment — consistent with dumb capture. **Detect on `Stop` (per-turn, reliable) + `PreCompact` (before context loss) + `SessionEnd`** — the last has bug #6428 (doesn't fire on `/clear`), so never rely on it alone. Test failures + ESC interrupts are NOT structurally flagged → best-effort only. Affect/tone signals = deferred (feedback-mining mode).
@@ -258,7 +239,7 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 
 No rivalry — roles assigned (MEM-15):
 - **Claude Code file memory + Hermes memory** → collapse into the **identity layer** (soul.md + per-scope identity).
-- **Retrieval for BOTH shared + vault** → the one local engine (AnythingLLM), isolated workspaces per substrate.
+- **Retrieval** → the one local engine (AnythingLLM) over one shared graph (MEM-23 — no per-vault workspaces).
 - **context-mode** → **session hygiene only** (in-session context-window protection), never a store of record. Its keyword KB / auto-memory is not canonical.
 - **NotebookLM** → dropped entirely (TOOL-1).
 
@@ -276,14 +257,14 @@ No rivalry — roles assigned (MEM-15):
 
 ## 13. Build backlog (non-blocking specs to finalize during build)
 
-- Retrieval-engine + permission-mirror **TTLs** (re-sync triggers post-reconciler-commit; revoke → invalidate mirror).
+- Retrieval-engine **re-sync TTLs** (triggers post-reconciler-commit).
 - `schema_version` **migration functions** (keyed `from→to`, in-repo, tested, lazy on read).
 - Reconciler **audit-diff + tombstones** (observability).
 - Dreaming **token/node budget + pending-review queue**.
 - Session **heartbeat** for dead-session detection.
 - Staging **growth cap** (block + warn, never silent drop).
 - Shared **Kanban board write-locking**.
-- ~~**Cold-start** bootstrap sequence~~ + ~~exact scope **directory paths** / vault layout~~ — **LOCKED 2026-06-22 → §6a.3** (idempotent bootstrap, seed-live-scopes, vault gitignore, append-only mode, INDEX.md).
+- ~~**Cold-start** bootstrap sequence~~ + ~~exact scope **directory paths**~~ — **LOCKED 2026-06-22 → §6a.3** (idempotent bootstrap, seed-live-scopes, append-only mode, INDEX.md).
 - **Hybrid-retrieval merge function** (MEM-19, from agentmemory grading): §7 leaves *how* the ranked lists combine unspecified. Where WE own the merge (engine semantic results × wikilink-traversal results), fuse the already-ranked lists with **RRF — reciprocal rank fusion, k=60** (standard rank-list fusion). Does NOT violate "buy retrieval": the engine still owns embeddings/vector retrieval internally; we only re-rank *across* the lists it returns. Sole requirement on us: each node carries clean distilled prose (the engine ingests it) — we build no vector index ourselves.
 - **Identity-node naming — already settled by §3** (node = TYPE × SCOPE grid cell); do NOT adopt agentmemory's flat 8-slot list wholesale — it's the single-axis model §3 rejected, and most slots aren't identity anyway (`tool_guidelines`→skills `## Rules`; `project_context`→§7 volatile/pointed-to; `pending_items`→Kanban/log; `session_patterns`→§8 dreaming output). At most cherry-pick `persona · user_preferences · guidance` as sub-fields *inside* an identity node. Reference only, low priority.
 

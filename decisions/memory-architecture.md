@@ -2,10 +2,13 @@
 topic: Memory architecture — core design
 decisions: [MEM-1, MEM-2, MEM-8, MEM-9, MEM-10, MEM-11]
 status: locked
+amended_by: MEM-23
 date: 2026-06-21
 ---
 
 # Memory Architecture — Core Design
+
+> **Amended 2026-06-22 (MEM-23):** the walling-specific passages below — "vault is not a type", the `substrate`/`sensitivity` schema fields, the staging substrate tag, the split-substrate §6 mechanism — are **retired**; isolation moved to the VM boundary. The core design (graph-not-tree, TYPE×SCOPE, owned-markdown+git, append-only staging + single reconciler) **stands**. SCOPE is now organization, not a confidentiality wall.
 
 ## TL;DR
 

@@ -3,10 +3,13 @@ topic: Memory retrieval engine selection
 decisions: [MEM-15, TOOL-1]
 related: [MEM-10]
 status: locked
+amended_by: MEM-23
 date: 2026-06-21
 ---
 
 # Retrieval Engine: AnythingLLM Chosen, NotebookLM Dropped
+
+> **Amended 2026-06-22 (MEM-23):** the "isolated workspaces per substrate / per-client vault" walling rationale below is **retired** — there is one shared graph, one workspace. (A later check-pass also found AnythingLLM workspaces are namespaces in a shared DB, not a real security boundary — moot under VM isolation.) The engine choice (local AnythingLLM over owned markdown, zero-network, swappable) **stands**, now weighed against simpler direct-ONNX + sqlite-vec + ripgrep at the real-machine smoke-test.
 
 ## TL;DR
 

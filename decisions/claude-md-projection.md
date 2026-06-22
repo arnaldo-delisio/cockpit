@@ -2,11 +2,14 @@
 topic: CLAUDE.md as a reconciler-projected always-load layer over the memory graph
 decisions: [MEM-20]
 status: locked
+amended_by: MEM-23
 date: 2026-06-22
 supersedes_park: TOOL-2 (headroom learn)
 ---
 
 # CLAUDE.md = Always-Load Projection of Memory
+
+> **Amended 2026-06-22 (MEM-23):** the "vault never projects to a shared-loaded file" / `substrate`-tag passages below are **retired** (no vault under VM isolation). The projection mechanism — reconciler-written fenced managed regions, scope-routed, capped, behavioral nodes only — **stands**.
 
 ## TL;DR
 

@@ -2,14 +2,17 @@
 topic: path topology — where memory and knowledge physically live on disk
 decisions: [MEM-13]
 status: locked
+amended_by: MEM-23
 date: 2026-06-20
 ---
 
 # Path Topology
 
+> **Amended 2026-06-22 (MEM-23):** isolation moved to the VM boundary — the `vault/` subdirectory, the `substrate` tag, and "scope = confidentiality boundary" are retired. **The topology decision itself stands** (flat knowledge pool · centralized substrate · co-located nav docs · the navigated-vs-queried reasoning). Read the vault/walling-specific passages below as historical trail.
+
 ## TL;DR
 
-Three distinct layers, three distinct placement rules: the knowledge graph is one flat pool (`~/.cockpit/memory/knowledge/nodes/`, scope = node frontmatter); the memory substrate is centralized (`~/.cockpit/memory/scopes/<scope>/{identity,log,staging,vault,sources}/`); project nav docs are co-located with the repo. A one-line `CLAUDE.md` pointer bridges the gap — experience feels local, bytes stay central. Vault is always local-only and gitignored, never inside a push-remote tree.
+Three distinct layers, three distinct placement rules: the knowledge graph is one flat pool (`~/.cockpit/memory/knowledge/nodes/`, scope = node frontmatter); the memory substrate is centralized (`~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`); project nav docs are co-located with the repo. A one-line `CLAUDE.md` pointer bridges the gap — experience feels local, bytes stay central. (Scope = organization, not a confidentiality wall — MEM-23.)
 
 ---
 
@@ -35,9 +38,9 @@ All knowledge nodes live in one flat directory regardless of domain. Scope is en
 
 ### 2. Memory substrate — centralized
 
-**Path:** `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,vault,sources}/`
+**Path:** `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`
 
-All per-scope operational memory lives under one root. Scopes are confidentiality and permission boundaries (e.g., `global`, `personal`, `venture/<name>`, `client/<name>`). Projects nest inside their scope as sub-folders or tags — a new scope exists only when a new wall is needed. The `sources/` subdirectory is the raw-capture layer (verbatim inputs, fully frontmattered and indexed). The `vault/` subdirectory holds confidential material and is always gitignored.
+All per-scope operational memory lives under one root. Scopes are **organizational** boundaries (e.g., `global`, `personal`, `venture/<name>`, `client/<name>`) — they mark who memory is *about*, not who may read it (MEM-23; confidentiality is enforced at the VM boundary). Projects nest inside their scope as sub-folders or tags. The `sources/` subdirectory is the raw-capture layer (verbatim inputs, fully frontmattered and indexed).
 
 ### 3. Project nav docs — co-located with the repo
 
@@ -90,7 +93,7 @@ Project nav docs are the opposite: they are navigated by path, auto-loaded from 
 
 1. **Knowledge graph = one flat pool.** `~/.cockpit/memory/knowledge/nodes/`, scope in frontmatter, master-index over the pool. Graph-not-tree because knowledge has cross-domain links that a folder hierarchy would trap.
 
-2. **Memory substrate = centralized.** `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,vault,sources}/`. Centralized because the system already requires a central home (global scope + cross-scope pool), co-location would create two homes, and memory is queried not navigated so co-location yields no benefit.
+2. **Memory substrate = centralized.** `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`. Centralized because the system already requires a central home (global scope + cross-scope pool), co-location would create two homes, and memory is queried not navigated so co-location yields no benefit.
 
 3. **Co-located experience, centralized storage.** Each project's `CLAUDE.md` carries exactly one line pointing to its scope: `Memory scope → ~/.cockpit/memory/scopes/<scope>/`. The agent working inside the project immediately knows where its memory lives; the bytes stay in the one safe, gitignored, controlled home. This honors the self-contained instinct without the two-homes cost.
 

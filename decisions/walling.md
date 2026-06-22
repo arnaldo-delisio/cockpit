@@ -1,12 +1,16 @@
 ---
 topic: Walling — how confidential client data is kept isolated
 decisions: [MEM-3, MEM-4, MEM-5, MEM-6, MEM-7]
-status: locked
+status: superseded
+superseded_by: MEM-23
+superseded_date: 2026-06-22
 date: 2026-06-19
 hardened: 2026-06-19pm
 ---
 
 # Walling — How Confidential Client Data Is Kept Isolated
+
+> **SUPERSEDED 2026-06-22 → MEM-23.** Intra-graph walling (split substrate, `vault/` dirs, keys-not-prompts, the `substrate` tag) was dropped in favor of **VM-as-trust-boundary**: a confidential client gets its own VM running a clone of the cockpit; the main VM holds only non-confidential work, and confidential data never leaves its VM. Retained for the **threat model + rejected-options reasoning** (still a content goldmine); the per-substrate mechanism documented below is **no longer built**.
 
 ## TL;DR
 
