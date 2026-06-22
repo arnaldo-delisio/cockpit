@@ -40,6 +40,7 @@ add an analysis file + a row here. Map:
 ### OM-2 · Two thin global shells  [Locked 2026-06-18]
 **Decision:** `~/CLAUDE.md` (builder) + `~/SOUL.md` (Hermes operator) at `~`. Infra only, not "personal."
 **Why:** `~/CLAUDE.md` merges cwd→`/` and loads in every session — it must be owned and thin, not avoided.
+**Clarified [2026-06-22]:** canonical content lives **in-repo** at `~/.cockpit/shells/{CLAUDE,SOUL}.md`; `~/{CLAUDE,SOUL}.md` are **relative symlinks** into it (version-controlled + clone-clean per MEM-23; a future `bootstrap.sh` recreates the symlinks). Kept in `shells/` — not `~/.cockpit/CLAUDE.md`, which auto-loads in cockpit-rooted sessions and is reserved for the cockpit-scope MEM-20 projection; symlinking there would double-load. Chose symlink over an `@`-import loader (BUILD-2 bans `@`-imports; Hermes's SOUL.md loader may not support them; symlink is filesystem-level + uniform for both shells).
 
 ### OM-3 · Identity is per-context, never global  [Locked 2026-06-18]
 **Decision:** every real identity (boringscale, personal, each client) is a scoped project; the global files are the *operator's* meta-identity, not any context's.
