@@ -72,7 +72,7 @@ Step-by-step. Each brain executes what applies to it.
 
 | Skill | Status | Replaces |
 |-------|--------|---------|
-| `watch/` | spec locked, build pending | `~/.claude/skills/youtube-extract/` |
+| `watch/` | **live** (2026-06-22) — both brains verified | `~/.claude/skills/youtube-extract/` (retire) |
 | `grill-me/` | spec locked, build pending | — |
 
 Full specs in `~/.cockpit/STATE.md` → Skills section.
