@@ -23,10 +23,11 @@ add an analysis file + a row here. Map:
 | `decisions/memory-architecture.md` | MEM-1,2,8,9,10,11 |
 | `decisions/walling.md` | MEM-3,4,5,6,7 |
 | `decisions/path-topology.md` | MEM-13 |
-| `decisions/ingestion-and-curation.md` | MEM-14,16,17,18 |
+| `decisions/ingestion-and-curation.md` | MEM-14,16,17,18,21,22 |
 | `decisions/retrieval-engine.md` | MEM-15 · TOOL-1 |
 | `decisions/headroom-eval.md` | TOOL-2 |
 | `decisions/doc-architecture.md` | DOC-1 |
+| `decisions/claude-md-projection.md` | MEM-20 |
 
 ---
 
@@ -113,7 +114,7 @@ add an analysis file + a row here. Map:
 **Why:** memory is hook-written / reconciler-read, never navigated, so co-location buys nothing here; one home ⇒ simpler single-writer + one gitignored vault tree we own. **Vault rule [Locked]:** local-only + gitignored, never in a tree with a push remote.
 
 ### MEM-14 · Ingestion + curation model  [Locked 2026-06-21]
-**Decision:** `sources/` = raw capture layer per scope (verbatim, frontmattered, search-indexed). **Capture = intent, no engagement gate** — everything autosaves, content-aware scope/substrate tagging. The nightly **dream judges depth** by reading (full node / stub / leave-raw), self-correcting via re-search. Memory is **freely mutable; git is the undo** — no tombstone/status-tier ceremony, no scheduled space-GC.
+**Decision:** `sources/` = raw capture layer per scope (verbatim, frontmattered, search-indexed). **Capture = intent, no engagement gate** — everything autosaves, **provenance/scope-aware** scope/substrate tagging (mechanical — from the input's origin + the session's scope, never by judging content meaning; MEM-6). The nightly **dream judges depth** by reading (full node / stub / leave-raw), self-correcting via re-search. Memory is **freely mutable; git is the undo** — no tombstone/status-tier ceremony, no scheduled space-GC.
 **Rejected:** engagement-meter gating; GC tombstone ceremony (git already gives reversibility). **Supersedes** DESIGN.md §10's tombstone language.
 
 ### MEM-15 · Retrieval engine = AnythingLLM (local), for both layers  [Locked 2026-06-21]
@@ -123,6 +124,7 @@ add an analysis file + a row here. Map:
 
 ### MEM-16 · Logging automatic via hooks; no `/log` skill  [Locked 2026-06-19]
 **Decision:** `session_end` + `pre-compaction` hooks → cheap Haiku summary → append to the scope's log file → reconciler distills nightly. Log files = the chronological SOURCE layer feeding the graph. Scope-aware + shared (Hermes + Claude one timeline).
+**Clarified [2026-06-22]:** capture is **dumb + comprehensive** — it records **near-raw, judgment-free**, with the scope/substrate stamp derived **mechanically** from session context. **Raw is the source of truth;** any Haiku summary is a **lossy convenience index**, never the only copy. **All judgment** (is this a durable rule? framing, dedupe, centrality, CLAUDE.md promotion) lives in the **reconciler** (Sonnet/Opus, MEM-9) — never Haiku at capture (MEM-12). Rationale: a cheap summary that drops a buried correction loses it forever; the smart pass happens later, so capture must keep raw signal.
 **Depth:** DESIGN.md §9.
 
 ### MEM-17 · Three ingestion modes  [Locked 2026-06-19 / +06-19pm]
@@ -136,6 +138,21 @@ add an analysis file + a row here. Map:
 **Decision:** where we own the merge (engine results × wikilink-traversal × vault search), fuse the already-ranked lists with reciprocal rank fusion, k=60. We build no vector index ourselves.
 **Source:** agentmemory grading (→ TOOL-4). **Depth:** DESIGN.md §13.
 
+### MEM-20 · CLAUDE.md = reconciler-projected always-load layer over memory  [Locked 2026-06-22]
+**Decision:** the reconciler (MEM-8, sole memory writer) also writes the **managed regions** of CLAUDE.md files — promoting high-`centrality` *behavioral* nodes (`type ∈ {identity, feedback}`) from the graph into the always-loaded CLAUDE.md layer, **routed by scope** (global node → `~/CLAUDE.md`; cockpit node → `~/.cockpit` CLAUDE.md; project/client node → that project's CLAUDE.md). Memory stays the home (DOC-1); the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited; the hand-authored skeleton (BUILD-2) stays in a separate block. Promotion is gated (`when_to_use` + adversarial structure/accuracy lens) + capped (the BUILD-4 10–15 `## Rules` pattern). Facts/knowledge stay retrieval-gated — they don't promote.
+**Why:** behavioral rules only bite when always-loaded; retrieval-gating makes them weak. Memory = substrate (everything, retrieval-gated); CLAUDE.md = always-load projection of the few in-scope behavior-critical rules. **One distiller (the reconciler), not two — this IS the self-evolving-CLAUDE.md mechanism**, so `headroom learn` is retired (closes TOOL-2's park; no external miner / leak surface).
+**Relates:** extends MEM-8; reuses BUILD-4 (reconciler-only promotion); respects BUILD-2/OM-6 (scope routing keeps the global root thin) + DOC-1 + MEM-10 (CLAUDE.md = another cache over owned markdown) + MEM-6/§6 (vault never projects to a shared-loaded file). **Depth:** decisions/claude-md-projection.md.
+
+### MEM-21 · Tagging model = emergent + reconciler-normalized (no fixed taxonomy)  [Locked 2026-06-22]
+**Decision:** node/source tags + entity labels (concepts/people/products) are **free-form at capture**; the reconciler **normalizes synonyms into an emergent canonical vocabulary** and maintains it over time (alongside cluster detection). **No hand-authored fixed keyword taxonomy** — and no pre-build effort authoring keywords.
+**Why:** semantic retrieval (MEM-15) finds by meaning, clusters are emergent (MEM-11), wikilinks carry relationships — a fixed taxonomy buys little and is brittle (new domains break it). The real need is *tag coherence*, solved by reconciler normalization (single-writer + self-improvement, MEM-8/9), not a human list. YAGNI. **Revisit only if** retrieval underperforms or a content-pipeline needs a curated vocab. **Depth:** decisions/ingestion-and-curation.md.
+
+### MEM-22 · Salience signals at capture (mechanical markers → reconciler attention)  [Locked 2026-06-22]
+**Decision:** capture emits cheap **mechanical** salience markers flagging high-value moments so the reconciler can prioritize — it still makes the keep/frame/centrality call; the markers just focus it (like log levels). Four categories: **keep** ("remember/note/important"), **correction** ("no/wrong/actually/don't", re-instruction), **error/failure**, **decision/approval** ("decided/approved/green"). Grounded in what Claude Code actually exposes: **error = structural** (`tool_result.is_error: true` / the `PostToolUseFailure` hook with `error_message`/`error_type`); **keep/correction/decision = regex over verbatim user text** (`UserPromptSubmit.prompt` real-time, or transcript `user.message.content` at capture). **Hooks:** detect on `Stop` (per-turn, reliable) + `PreCompact` (before context loss) + `SessionEnd` (boundary — but bug #6428: doesn't fire on `/clear`, so never rely on it alone). **Affect-based** signals (frustration/tone) = deferred to the richer feedback-mining mode (parked).
+**Why:** even a smart reconciler benefits from cheap anchors so it doesn't miss a buried correction. Emitting them is **pattern-matching, not judgment** → does NOT violate capture-is-dumb (MEM-16). Caveat: test failures + ESC interrupts are NOT structurally flagged by Claude Code (text-only / absent) → those stay best-effort, not guaranteed.
+**Two tiers + sentinels [Locked 2026-06-22]:** **Tier 1 — explicit sentinels** the user types: **`#good`** (worth keeping / reinforce) and **`#bad`** (wrong / behavioral lesson). Collision-free (never typed except as a signal — unlike natural words "no"/"great" which false-fire), deterministic, zero-cost, **highest confidence** (the human verdict). **Tier 2 — inferred** (the structural `is_error` + natural-language regex above): best-effort, automatic, for when nothing was marked. **Cost link:** the salience set (errors + sentinels + corrections + decisions) is what the dream's cheap pass gathers into a digest so the expensive model never reads the raw firehose (DESIGN §8).
+**Open caveat → OPEN-8:** sentinels are **opt-in — the user will forget to mark things worth keeping**, so the inferred tier + the reconciler's own judgment MUST stay the safety net; sentinel-absence must NOT be read as low-value. How exactly the tiers interact (does the reconciler still surface unmarked-but-salient items for review? a periodic "did I miss anything" pass?) = OPEN-8, next session's starting point. **Depth:** decisions/ingestion-and-curation.md.
+
 ---
 
 ## Retrieval & tooling evaluations
@@ -148,6 +165,7 @@ add an analysis file + a row here. Map:
 **Decision:** do NOT adopt Headroom's proxy/compression or its memory-as-store-of-record. **Park `headroom learn`** (offline transcript miner) as a candidate for the self-evolving-CLAUDE.md / feedback-mining slot.
 **Why reject core:** open cross-origin data-disclosure vuln (#1227) vs our hard client-data walling guardrail; opt-out telemetry by default (#1223); pre-1.0 chaos (2 releases/day, open data-loss #1006, AST corruption #1233); bus-factor-1; inflated star count. Would override MEM-10 (markdown-graph spine) + the context-mode-stays decision.
 **Why park `learn`:** runs offline/off-critical-path, dry-run by default, writes standard CLAUDE.md/MEMORY.md, no telemetry in that path. Re-check #1227/#1223 + run it scoped (it reads all projects' transcripts by default). **Validates** MEM-15 (independently picked the same `all-MiniLM-L6-v2` ONNX embedder). **Depth:** log 2026-06-21.
+**Update [2026-06-22]:** `learn` park **closed** — the self-evolving-CLAUDE.md need it was held for is now served natively by our own reconciler (MEM-20), so no external miner is adopted (avoids its leak surface entirely). Headroom stays rejected as core infra.
 
 ### TOOL-3 · Hermes aux models = gpt-5.4-mini (DeepSeek out)  [Locked 2026-06-21]
 **Decision:** all 8 Hermes `auxiliary.*` slots → `gpt-5.4-mini` on `provider: openai-codex` (in-plan via ChatGPT/Codex OAuth).
@@ -160,6 +178,11 @@ add an analysis file + a row here. Map:
 ### TOOL-5 · Tools layer — dropped as a standalone step  [Locked 2026-06-20]
 **Decision:** no standalone tools-topology dive; tool requirements fold into Skills per flow.
 **Parked candidates:** Token Optimizer, RTK (overlaps context-mode), claude-context-optimizer.
+
+### TOOL-6 · Native Claude / Hermes memory evaluated as capture feeder — rejected  [Locked 2026-06-22]
+**Decision:** do NOT use Claude Code's native auto-memory or Hermes's memory subsystem as the memory **capture feeder** (nor as store of record). Build our own session-boundary capture hooks (MEM-16) feeding staging.
+**Why — as store of record:** native = flat single-axis model rejected by MEM-2; Hermes = SQLite DB rejected by MEM-10. **As a feeder:** neither stamps **write-time provenance/substrate** (the MEM-6 walling cornerstone) and it can't be retrofitted safely for confidential scopes; native **couples write+recall** (can't capture without its own recall injection → a second recall system fighting ours), its disable-bug **#63903 taxes ~11–16k tokens/session**, and its frontmatter is undocumented/internal (drift risk); both are **model-decided + lossy**, not the deterministic session-boundary capture our design needs. The build it would save is a small hook script — false economy against losing provenance + control.
+**Salvage (fair):** use native's `autoMemoryDirectory`/disable controls at the day-0 cutover; **bridge Hermes as a staging *writer*** (its existing write-gate/approval already fits the stage→reconcile model), not a store we read. **Confirms** MEM-16 rather than overturning it. **Depth:** log 2026-06-22 (two research agents: CC memory feature + Hermes `memory_tool.py`).
 
 ---
 
@@ -206,3 +229,4 @@ Live forks. When one closes, convert it to a locked entry above and link from ST
 - **OPEN-5 · Verify-loop home** — do goal-driven verify-loops live in CLAUDE.md or the Workflows layer? Orchestration-boundary call for the CLAUDE.md dive. [2026-06-19]
 - **OPEN-6 · Model Routing mechanism** — policy is live (MR-1, OM-5); the *router* (Claude-side CCR/Codex non-Anthropic models; signals; enforcement) is unbuilt. Its own deep dive. [2026-06-19]
 - **OPEN-7 · clients/ventures folder split** — boringscale stays flat for now; rebuild the split only when re-onboarding archived contexts. [2026-06-20]
+- **OPEN-8 · Sentinel safety-net behavior** — `#good`/`#bad` sentinels (MEM-22) are opt-in; the user will forget to mark things worth keeping, so forgetting must NOT mean lost. Decide how the explicit tier interacts with the inferred tier + reconciler: does the reconciler surface unmarked-but-salient items for review? a periodic "did I miss anything" sweep? how is sentinel-absence weighted (not as low-value)? **Next session starts here.** [2026-06-22]

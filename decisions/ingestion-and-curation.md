@@ -1,8 +1,8 @@
 ---
 topic: ingestion and curation — how sources enter the brain and how it stays current
-decisions: [MEM-14, MEM-16, MEM-17, MEM-18]
+decisions: [MEM-14, MEM-16, MEM-17, MEM-18, MEM-21, MEM-22]
 status: locked
-date: 2026-06-21
+date: 2026-06-21 (capture-is-dumb clarification + MEM-21/22 added 2026-06-22)
 ---
 
 # Ingestion + Curation — Decision Analysis
@@ -35,7 +35,7 @@ Files are frontmattered (title, date, scope, substrate) so the search index can 
 
 **The key rule: saving to `sources/` requires no threshold to cross.** If the user or a hook saves something, it goes in. The `/watch` command (which previously had its own "save this" spec) collapses into this: it autosaves here, no explicit confirmation required.
 
-Content-aware tagging happens at save time: public material goes to `scopes/global/sources/` with `substrate:shared`; confidential material goes to that scope's `vault/sources/`. The substrate tag is immutable — provenance is set at capture and cannot drift.
+**Provenance/scope-aware** tagging happens at save time — **mechanical, from the input's origin + the session's scope, never by semantically judging the content** (consistent with capture-is-dumb, MEM-16, and mechanical-substrate, MEM-6): global-origin/public → `scopes/global/sources/` with `substrate:shared`; client-origin/confidential-scope → that scope's `vault/sources/`. The substrate tag is immutable — provenance is set at capture and cannot drift.
 
 **Why no engagement gate?** Engagement metrics (view count, citation count, re-read rate) measure past usage, not future value. A source that has never been retrieved might be the most important context for a rare-but-critical question. Gating on engagement would produce a biased corpus that over-represents frequently-accessed topics and starves edge cases. Rejected.
 
@@ -154,9 +154,47 @@ A fourth ingestion mode was discussed but not built: **feedback mining** — min
 
 Parked because: it is off the critical path; the core capture→dream→graph pipeline should be built and validated first; and a candidate tool (Headroom's `learn` command) exists but has open security issues that need re-checking before use (cross-origin data disclosure vulnerability #1227 per the evaluation in TOOL-2).
 
-### Keyword taxonomy co-evolution
+### Two "keyword" decisions, both resolved 2026-06-22
 
-The 2026-06-21 log entry references "keyword taxonomy co-evolution" as a related thread that was captured but not fully resolved in that session. This appears adjacent to the content-aware tagging at capture time. Status uncertain — not enough in the committed docs to characterize further.
+The 2026-06-21 log's "keyword taxonomy" thread turned out to be **two different questions**, both now decided. They're easy to conflate (both say "keyword") but point opposite directions: one is about *findability* (how nodes are labeled), the other about *attention* (what the reconciler should notice).
+
+#### Tagging model — MEM-21 (about findability)
+
+**Decision: free-form tags, reconciler-normalized into an emergent canonical vocabulary; no hand-authored fixed taxonomy.**
+
+The instinct to "define the keywords up front" is over-engineering under our retrieval design:
+- Semantic retrieval (AnythingLLM, MEM-15) finds by *meaning* — it doesn't need exact-match keywords.
+- `cluster` membership (MEM-11) is *emergent* via community detection — not a pre-defined topic list.
+- Wikilinks carry the relationships.
+
+So a controlled vocabulary buys little and is brittle — every new domain breaks a fixed list. The one *real* need it gestures at is **tag coherence**: if every session invents its own label for the same idea, the graph fragments (sparse links, weak clusters). But that's solved by the reconciler — as single writer (MEM-8) doing self-improvement (§10), it **normalizes synonyms into a canonical vocabulary that grows with the graph**, rather than a human authoring a list. YAGNI on the taxonomy; coherence handled by the machinery we already have. Revisit only if retrieval measurably underperforms, or a downstream content-pipeline needs a curated vocab for its own reasons.
+
+#### Salience signals — MEM-22 (about attention)
+
+**Decision: capture emits cheap mechanical markers flagging high-value moments, so the reconciler prioritizes them — it still makes the keep/frame call; the markers just focus it.**
+
+This is what makes "dumb capture + smart reconciler" robust: a smart reconciler *could* re-read every raw transcript with equal attention, but it might miss a one-line correction buried mid-session (the "always pin Sonnet on subagents" case). Salience signals are cheap anchors that say *look here*. Crucially, **detecting them is pattern-matching, not judgment** — so they don't reintroduce judgment-at-capture (MEM-16); they're like log levels (ERROR/WARN are cheap to emit, valuable to the smart consumer).
+
+Four categories, **grounded in what Claude Code actually exposes** (verified against the hooks + transcript mechanism, 2026-06-22):
+
+| Signal | Detection mechanism | Reliability |
+|---|---|---|
+| **Error / failure** | `tool_result.is_error: true` in the transcript; the `PostToolUseFailure` hook (`error_message`/`error_type`) | **Structural** — reliable (1,275 `is_error` instances found in local history) |
+| **Keep** ("remember/note/important") | regex over verbatim user text (`UserPromptSubmit.prompt`; transcript `user.message.content`) | Mechanical |
+| **Correction** ("no/wrong/actually/don't", re-instruction) | same — regex over user text | Mechanical (highest-value: behavioral lessons live here) |
+| **Decision / approval** ("decided/approved/green") | same — regex over user text | Mechanical |
+
+**Capture/detection points:** `Stop` (fires per-turn, reliable, carries `transcript_path`) + `PreCompact` (before context is lost) + `SessionEnd` (true boundary — but **bug #6428: doesn't fire on `/clear`**, so it's a backup, never the sole trigger).
+
+**Limits (honest):** Claude Code does *not* structurally flag test failures (they're just text in tool output) or ESC interrupts (no confirmed record) — those stay best-effort, not guaranteed. And **affect-based** signals (frustration, tone) are *not* part of this mechanical layer — they belong to the richer **feedback-mining mode** (parked, above). MEM-22 is the cheap-and-reliable subset; feedback-mining is the smarter loop built later on top.
+
+**Two tiers + explicit sentinels (decided 2026-06-22).** The signals split by confidence:
+- **Tier 1 — explicit sentinels** the user types deliberately: **`#good`** (worth keeping / reinforce this) and **`#bad`** (wrong / behavioral lesson). These are the *highest-confidence* signal — a human verdict — and the cheapest possible to detect (exact string, no semantics). The choice is deliberately **collision-free**: natural words like "no", "wrong", "great" were rejected because the user uses them constantly in benign ways (high false-positive); `#good`/`#bad` appear *only* as signals. (The user floated "fuck"/"great" — same collision problem, so we moved to the hashtag form.)
+- **Tier 2 — inferred:** the structural (`is_error`/`PostToolUseFailure`) + natural-language-regex signals in the table above. Best-effort, automatic, for when nothing was marked.
+
+**The opt-in gap (OPEN-8) — the real unresolved question.** Sentinels are opt-in, and the user *will* forget to mark things worth keeping. So **sentinel-absence must never be read as low-value**, and the inferred tier + the reconciler's own judgment must remain the safety net. *How exactly* the tiers interact — does the reconciler proactively surface unmarked-but-salient items for review? a periodic "did I miss anything" sweep? how is an unmarked-but-clearly-important correction weighted vs a `#bad`? — is **deferred to OPEN-8** and is the explicit starting point for the next session. The decision here locks the *markers and tiers*; it does **not** yet lock the forget-safety behavior.
+
+**Cost connection.** The salience set (errors + `#good`/`#bad` + corrections + decisions) is also the **cost lever** for the dream: a cheap mechanical pass gathers only the flagged spans into a digest, and the expensive model judges the digest, never the raw firehose (DESIGN §8). So the signals serve quality *and* keep nightly-cron token cost bounded to flagged material.
 
 ---
 
@@ -174,3 +212,6 @@ The 2026-06-21 log entry references "keyword taxonomy co-evolution" as a related
 | `memory/DESIGN.md` §10 | Self-improvement + GC: character-cap backstop, supersede vs delete, OPEN-2 |
 | `log/2026-06.md` — 2026-06-21 entry | Narrative of the design session: reversals, tombstone rejection reasoning, deletion aggressiveness deferral, user quotes validating Haiku routing, parked feedback mining |
 | `STATE.md` — INGESTION + CURATION MODEL — DECIDED | Top-level lock confirmation and cross-references |
+| `DECISIONS.md` — MEM-21 | Tagging model: free-form, reconciler-normalized, no fixed taxonomy |
+| `DECISIONS.md` — MEM-22 | Salience signals: mechanical capture-time markers → reconciler attention |
+| Claude Code hooks + transcript research (2026-06-22, claude-code-guide agent) | Grounded the salience-signal mechanism: `is_error`/`PostToolUseFailure` for errors, `UserPromptSubmit.prompt`/transcript for user-text regex, `Stop`/`PreCompact`/`SessionEnd` triggers + bug #6428 |

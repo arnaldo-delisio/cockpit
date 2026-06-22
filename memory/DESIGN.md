@@ -1,6 +1,6 @@
 # Cockpit Memory Layer — Canonical Design
 
-**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions). Build not started.
+**Status:** design closed + hardened (2026-06-19; refreshed 2026-06-21 for the AnythingLLM / ingestion-model decisions; 2026-06-22 for the CLAUDE.md-projection decision, MEM-20). Build not started.
 **Source of decisions:** `~/.cockpit/DECISIONS.md` (MEM-*, TOOL-*, BUILD-*). This doc is the integrated spec of *how the memory layer works*; DECISIONS holds the choice-by-choice trail + rejected alternatives; `log/` holds the chronology.
 **Scope of this doc:** the memory layer only. Tools, skills, `~/CLAUDE.md` orchestration, and the Hermes↔Claude handoff are separate deep dives.
 
@@ -64,6 +64,8 @@ Every cell of the grid exists:
 - `substrate` — **immutable** provenance tag (`shared` | `vault:<scope>`); see §6.
 - `schema_version` — for lazy migration as the schema evolves.
 
+**Tagging / vocabulary (MEM-21).** Tags + entity labels (concepts/people/products) are **free-form at capture**; the reconciler **normalizes synonyms into an emergent canonical vocabulary** (no hand-authored fixed taxonomy). Semantic retrieval (§7) + emergent `cluster`s + wikilinks make a controlled vocab unnecessary — the reconciler maintains *coherence* (the real need) as part of its self-improvement pass (§10). Revisit only if retrieval underperforms.
+
 ---
 
 ## 5. Write model — staging + single reconciler
@@ -83,6 +85,17 @@ This **unifies write-safety and self-improvement into one component** (the recon
 - **Instability guard:** before committing a rewrite, if citation-drop OR centrality-delta OR cluster-flip exceeds threshold → hold for human review instead of auto-commit.
 - **soul.md** mutations route through the **same** staging→reconciler pipeline (no direct writes — a bad direct write would corrupt every future session).
 - **Subagents write ONLY to staging.** "Haiku plumbing" = git ops on behalf of the reconciler, **not** arbitrary graph-write access.
+
+### Projection to CLAUDE.md (MEM-20)
+
+The reconciler is also the **sole writer of the "managed regions" of CLAUDE.md files** — the always-loaded layer is a *projection* of memory, not a separately hand-maintained doc. (Memory is *retrieval-gated*; CLAUDE.md is *always-loaded* via the cwd→`/` merge. Behavioral rules only bite when always-loaded, so the few that matter get promoted out of the retrieval-gated graph into the always-load layer.)
+
+- **What promotes:** high-`centrality` behavioral nodes only — `type ∈ {identity, feedback}` (operating rules). Facts/`knowledge` stay retrieval-gated and never promote.
+- **Gate + cap:** `when_to_use` + an adversarial structure/accuracy lens decides survivors; the BUILD-4 `## Rules` 10–15 cap keeps the always-load layer thin (BUILD-2).
+- **Scope routing (mandatory):** a node promotes only into the CLAUDE.md of *its own scope* — global → `~/CLAUDE.md`; cockpit → `~/.cockpit`'s CLAUDE.md; project/client → that project's CLAUDE.md. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules). A `vault:<scope>` node never projects to a file with a wider load surface than its own scope (§6 cross-substrate-promotion-forbidden).
+- **One home (DOC-1):** the graph node is the home; the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited. The hand-authored skeleton (BUILD-2) lives in a separate block of the same file. Edit the rule → edit the node → next reconciler run refreshes the projection.
+
+This is the **self-evolving-CLAUDE.md mechanism** — one distiller (the reconciler), not a second external miner, so `headroom learn` is retired (TOOL-2). Depth: `decisions/claude-md-projection.md`.
 
 ---
 
@@ -118,17 +131,20 @@ This closes the five leak paths the review found: commingled logs, dreaming-patt
 
 ## 8. Ingestion — capture + three modes
 
-**Capture layer (`sources/`, MEM-14).** Each scope has a `sources/` dir (beside `vault/`): verbatim inputs — transcripts, repo snapshots, docs, pastes — frontmattered (`type · title · source · captured · session_anchor · scope · substrate · status · distilled_into · concepts/people/products`), fully search-indexed so nothing is ever invisible. **Capture = intent, no engagement gate** — everything autosaves (`/watch` autosaves here), content-aware tagged: public → `scopes/global/sources/` `substrate:shared`; confidential → that scope's `vault/sources/`. The **dream judges depth** by reading (full cross-linked node / one-line stub / leave-in-raw) — reading comprehension is the filter, no engagement metric; a wrong call self-corrects (find raw by search later → next run promotes). Memory is **freely mutable; git is the undo** — no tombstone ceremony, no scheduled space-GC (MEM-14, supersedes §10's tombstone language).
+**Capture layer (`sources/`, MEM-14).** Each scope has a `sources/` dir (beside `vault/`): verbatim inputs — transcripts, repo snapshots, docs, pastes — frontmattered (`type · title · source · captured · session_anchor · scope · substrate · status · distilled_into · concepts/people/products`), fully search-indexed so nothing is ever invisible. **Capture = intent, no engagement gate** — everything autosaves (`/watch` autosaves here), **provenance/scope-aware** tagged (mechanical — from the input's origin + the session's scope, not by reading content meaning; MEM-6): global-origin/public → `scopes/global/sources/` `substrate:shared`; client-origin/confidential-scope → that scope's `vault/sources/`. The **dream judges depth** by reading (full cross-linked node / one-line stub / leave-in-raw) — reading comprehension is the filter, no engagement metric; a wrong call self-corrects (find raw by search later → next run promotes). Memory is **freely mutable; git is the undo** — no tombstone ceremony, no scheduled space-GC (MEM-14, supersedes §10's tombstone language).
 
 1. **On-demand RAG** — pull at query time.
-2. **Proactive "dreaming"** — overnight cron agent reads every NEW source (since last run) + (substrate-scoped) logs + shared graph, triages, distills to earned depth, cross-links, surfaces suggestions unprompted. Output tagged `source=dreaming` at **lower trust rank**; novel suggestions go to a **pending-review queue**, not straight to canonical. Hard token + new-node budget per run. Routing: judgment (triage/distill/cross-link/conflict) = Sonnet min, Opus for hard calls; Haiku = plumbing only (git, dedup-by-hash, mark-consumed).
+2. **Proactive "dreaming"** — overnight cron agent reads every NEW source (since last run) + (substrate-scoped) logs + shared graph, triages, distills to earned depth, cross-links, surfaces suggestions unprompted. Output tagged `source=dreaming` at **lower trust rank**; novel suggestions go to a **pending-review queue**, not straight to canonical. Hard token + new-node budget per run. Routing: judgment (triage/distill/cross-link/conflict) = Sonnet min, Opus for hard calls; Haiku = plumbing only (git, dedup-by-hash, mark-consumed). **Cost control — salience-anchored digest:** a cheap mechanical pass (Haiku / local Gemma / regex) first gathers only the salience-flagged spans (MEM-22: errors, `#good`/`#bad` sentinels, corrections, decisions) into a compact digest; the expensive model (Sonnet/Opus) judges *that digest*, never the raw firehose — so costly tokens scale with *flagged* material, not total volume. Nightly cron + the hard per-run budget are the backstops.
 3. **Active elicitation ("grill me")** — pull tacit knowledge *out of the human* into the identity/knowledge layer by **relentless one-question-at-a-time interviewing** (recommend an answer per question; if the codebase can answer, look there instead of asking). Checkpoint each answer to structured markdown as you go. Output = discovery nodes + key decisions + Q&A log + **open-flags** (what the human couldn't answer). Open-flags feed the reconciler's **human-escalation queue** (§5). This is the input path for knowledge that no log or resource contains. Packaged as a skill (skills dive). Pattern source: Matt Pocock's `grill-me`.
 
 ---
 
 ## 9. Logging
 
-- **Automatic via hooks — there is no `/log` skill.** `session_end` + `pre-compaction` hooks → a cheap Haiku agent summarizes the session → appends to the scope's log file. (`pre-compaction` ensures in-session observations aren't eaten by context compaction.)
+- **Automatic via hooks — there is no `/log` skill.** `session_end` + `pre-compaction` hooks capture the session into the scope's log/staging — **near-raw and judgment-free.** Capture *records*, it does not decide what matters. The scope/substrate stamp is derived **mechanically from session context** (which scope/project the session ran in), not by reading content. (`pre-compaction` ensures in-session observations aren't eaten by context compaction.)
+- **Raw is the source of truth.** Any Haiku summary at capture is a **lossy convenience index, never the only copy** — Haiku here is plumbing (write the file), never judging what's worth keeping (MEM-12). If a cheap summary dropped a buried correction, the reconciler would never see it; so capture preserves raw signal.
+- **All recognition + distillation is the reconciler's job** (§5, Sonnet/Opus): it reads the raw record and decides what's a durable rule/fact, frames it, dedupes, sets centrality, and promotes to CLAUDE.md/SOUL.md. Judgment is concentrated in the one place that can afford intelligence.
+- **Salience signals (MEM-22).** Capture also emits cheap **mechanical** markers flagging likely-high-value moments for the reconciler to prioritize (it still makes the final call) — four categories: **keep · correction · error · decision**. **Tier 1 = explicit sentinels** the user types — **`#good`** / **`#bad`** — collision-free, deterministic, highest-confidence (the human verdict). **Tier 2 = inferred** (the structural + regex signals below), best-effort, for when nothing was marked. *(Sentinels are opt-in → forgetting must not mean lost; the tier interaction is OPEN-8.)* Grounded in what Claude Code exposes: **errors are structural** (`tool_result.is_error: true` / the `PostToolUseFailure` hook); **keep/correction/decision = regex over verbatim user text** (`UserPromptSubmit.prompt` or transcript `user.message.content`). Detection is pattern-matching, not judgment — consistent with dumb capture. **Detect on `Stop` (per-turn, reliable) + `PreCompact` (before context loss) + `SessionEnd`** — the last has bug #6428 (doesn't fire on `/clear`), so never rely on it alone. Test failures + ESC interrupts are NOT structurally flagged → best-effort only. Affect/tone signals = deferred (feedback-mining mode).
 - **Log files = the chronological SOURCE layer** under the graph (append-only diary; never rewritten). The reconciler **ingests** them and distills durable facts up into the graph.
 - **Scope-aware + shared:** one timeline per context that **both Hermes and Claude** append to (replaces the old hardcoded `{CWD}/log/`).
 - **Ad-hoc "note this"** = an agent writing to the scope log file directly — no dedicated skill.
@@ -183,7 +199,7 @@ No rivalry — roles assigned (MEM-15):
 
 ## 14. Explicitly deferred (other deep dives)
 
-- **`~/CLAUDE.md` orchestration** — the auto-loaded layer; how CLAUDE.md ↔ STATE ↔ graph ↔ soul.md cross-reference without bloat. Its own deep dive.
+- **`~/CLAUDE.md` orchestration** — the auto-loaded layer; how CLAUDE.md ↔ STATE ↔ graph ↔ soul.md cross-reference without bloat. Its own deep dive. *(The memory→CLAUDE.md projection mechanism is now decided — MEM-20, §5; the rest of the orchestration stays deferred.)*
 - **Tools layer** — MCP/tool topology per brain.
 - **Skills layer** — `~/.cockpit/skills/` structure; self-improving skill `## Rules` block; `/watch` visual-ingestion evaluation.
 - **Hermes↔Claude handoff interface.**
