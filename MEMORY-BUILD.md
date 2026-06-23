@@ -175,7 +175,14 @@ live globally. Phase 3 setup both forks closed: ✅ **private data repo** (Optio
 public; `memory/` = standalone private git repo = commit target); ✅ **model access** (MEM-25 revised —
 `judge()` shells to `hermes -z`, tiered in-plan Codex gpt-5.5/gpt-5.4-mini per TOOL-3; no proxy, no login).
 
-**Next (the reconciler itself):** ① `judge()` adapter (`hermes -z` wrapper, tier routing, JSON-parse+retry)
-— building now; ② first deps (`package.json` + `@huggingface/transformers` in `memory-engine/`); ③ §5 writer
-(staging→nodes) + MEM-24 retrieval + two-phase commit + instability guard. v1 = single on-demand batch
-command (nightly timer later). Reconciler commits to the `memory/` data repo.
+✅ **`judge()` built + smoke-tested** (`memory-engine/judge.mjs`, 2026-06-23) — `judge(prompt,{tier,json,retries})`
+shells to `hermes -z … --provider openai-codex -m <model> --ignore-rules -t ''`, tolerant JSON parse + retry;
+live `bulk` call returned clean parsed JSON. Model path proven end-to-end.
+
+**Next (the reconciler itself — START HERE next session):** ① deps (`package.json` + `@huggingface/transformers`
+in `memory-engine/`, pinned); ② §5 writer: staging → canonical nodes per §6a.1 (field-ownership split; mint
+`feedback` nodes from MEM-22 markers), calling `judge()` for the model work; ③ MEM-24 retrieval (embed, cosine,
+ripgrep, RRF) `require`d in-process; ④ MEM-9 two-phase commit (write+commit to the `memory/` data repo, THEN
+mark staging consumed) + lockfile + instability guard; ⑤ regenerate `INDEX.md`. v1 = single on-demand batch
+command (nightly timer later). Build rigorously (the heart); per build-doctrine, re-read DESIGN §5/§7/§10 +
+DECISIONS MEM-8/9/24 first.
