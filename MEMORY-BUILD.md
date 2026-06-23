@@ -127,11 +127,18 @@ bridge wired. This is **execution, not design**.
 
 ## Build-local micro-decisions (running — not big enough for DECISIONS.md)
 
-_(none yet — record decisions made during the build here so resume sessions inherit them)_
+- **2026-06-23 — Node single-project confirmed (Option A).** Reconciler + engine + bootstrap +
+  projection + capture-script all Node; reconciler `require`s the MEM-24 engine in-process.
+- **2026-06-23 — Reconciler runtime → DECISIONS MEM-25** (promoted out of build-local). Standalone
+  brain-neutral Node infra; model calls via `judge()` → `hermes proxy`; GPT-5.5 start, swappable.
+- **2026-06-23 — Git posture → DECISIONS OSS-1** (promoted). Public = system, private = data;
+  `memory/scopes/` + `memory/knowledge/` gitignored from the public repo now; private data repo +
+  reconciler commit-target deferred to Phase 3. `bootstrap.mjs` = source of truth for the data tree.
+- **2026-06-23 — Test transcript: REMOVE** (user call). Clean start; no real sources until live capture.
 
 ---
 
 ## Current position
 
-**Phase 0 done.** Tracker created. Assumptions stated, awaiting confirm/redirect. Next: build Phase 1
-bootstrap on the nod.
+**Phase 0 done + grey areas resolved** (MEM-25, OSS-1 captured). **Building Phase 1** (bootstrap +
+gitignore split + remove test transcript).

@@ -10,5 +10,16 @@ memory/scopes/*/vault/
 .env.*
 !.env.example
 
+# Private memory DATA — never in the (open-source-ready) public history (OSS-1).
+# Public = the system (engine + specs + skills); private = the data (identity/logs/knowledge).
+# bootstrap.mjs is the source of truth for this tree — recreated on a clone; the public repo
+# stays data-free + clone-clean. Private versioning + reconciler commit-target finalized at build.
+memory/scopes/
+memory/knowledge/
+
+# Engine runtime — deps pinned in package.json, never committed (the HF model cache lives in
+# ~/.cache/huggingface, outside the repo).
+memory/engine/node_modules/
+
 # OS cruft
 .DS_Store

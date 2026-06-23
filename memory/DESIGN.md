@@ -51,6 +51,7 @@ Every cell of the grid exists:
 ## 4. Storage & ownership
 
 - **Store of record:** distilled wikilinked markdown files + **git** underneath (history, rollback, audit). Local-first, embedded — no cloud DB (no Turso) for the store of record.
+- **Git boundary (OSS-1):** the *system* (engine + specs + skills) is public-ready in the cockpit repo; the *data* (`scopes/`, `knowledge/`) is **private** — gitignored from the public repo now (`bootstrap.mjs` recreates the tree on a clone, so the public history stays data-free). The data's own versioning + the reconciler's two-phase-commit git target are finalized at build (Phase 3, when nodes first exist).
 - **Layout (MEM-13):** knowledge graph = one flat pool `~/.cockpit/memory/knowledge/nodes/` (scope = node frontmatter, master-index over the pool); memory substrate = centralized `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`. `sources/` = raw capture layer (§8). Each project's co-located `CLAUDE.md` carries a one-line pointer to its scope.
 - **Graph structure** = wikilinks (`[[ ]]`, Obsidian-navigable) between markdown nodes.
 
@@ -86,6 +87,10 @@ This **unifies write-safety and self-improvement into one component** (the recon
 - **Instability guard:** before committing a rewrite, if citation-drop OR centrality-delta OR cluster-flip exceeds threshold → hold for human review instead of auto-commit.
 - **soul.md** mutations route through the **same** staging→reconciler pipeline (no direct writes — a bad direct write would corrupt every future session).
 - **Subagents write ONLY to staging.** "Haiku plumbing" = git ops on behalf of the reconciler, **not** arbitrary graph-write access.
+
+### Reconciler runtime (MEM-25)
+
+The reconciler is a **standalone, brain-neutral Node process** — the single-writer of a substrate both brains share, owned by neither (a Hermes-owned reconciler would reintroduce a master, against OM-1). It `require`s the retrieval engine in-process (§7, MEM-24). Triggered by a timer (nightly heavy pass) + on-demand (continuous light pass). Its model calls route through a single swappable **`judge()`** adapter → **Hermes's local OpenAI-compatible proxy** (`hermes proxy`), riding in-plan OAuth (no per-token billing, MR-1) and acting as the de-facto OPEN-6 router endpoint. Distillation starts on Hermes's GPT-5.5 tier (TOOL-3); `judge()` keeps a Claude adapter (`claude -p` / Anthropic API) a one-file swap if quality demands the Sonnet/Opus family. Model *family* is a measure-then-tune call, not a lock.
 
 ### Projection to CLAUDE.md (MEM-20)
 

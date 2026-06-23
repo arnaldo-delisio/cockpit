@@ -29,6 +29,7 @@ add an analysis file + a row here. Map:
 | `decisions/doc-architecture.md` | DOC-1 |
 | `decisions/claude-md-projection.md` | MEM-20 |
 | `decisions/codex-integration.md` | TOOL-7 |
+| `decisions/open-sourcing.md` | OSS-1 |
 
 ---
 
@@ -175,6 +176,11 @@ add an analysis file + a row here. Map:
 **Scaling:** ~1.5 KB/node vector + ~0.2 µs/node scan → brute-force stays interactive to **~50k–100k nodes** (~20–100× the realistic 5-year ceiling); RAM only binds ~2–3M nodes. When/if hit, an ANN index (sqlite-vec / LanceDB) is a **drop-in cache swap** — owned-markdown spine unchanged (MEM-15's swappable-cache principle).
 **Rejected:** AnythingLLM (heavyweight app; Docker/Electron; workspaces/GUI/chat unused post-MEM-23); Open Notebook (SurrealDB dep + active CVEs); sqlite-vec / LanceDB / HNSW (ANN unjustified <~50k nodes; sqlite-vec also pre-1.0 on Node v26); `@xenova/transformers` (deprecated, 2yr stale — use `@huggingface/transformers`); NotebookLM (TOOL-1 — no API, can't own the spine, wrong output shape; MEM-23 dissolves only its *confidentiality* objection, not the structural ones). **Relates:** MEM-19 (RRF), MEM-10 (owned spine). **Depth:** `decisions/retrieval-engine.md`.
 
+### MEM-25 · Reconciler runtime = standalone Node infra; model access via Hermes proxy  [Locked 2026-06-23]
+**Decision:** the reconciler is a **standalone, brain-neutral Node process** — the single-writer (MEM-8) of a substrate both brains share, owned by neither. (A Hermes-*owned* reconciler would reintroduce a master conductor, against OM-1; the shared single-writer is infrastructure, not a capability-agent.) Triggered by a timer (nightly heavy pass) + on-demand (continuous light pass). Its model calls route through **Hermes's local OpenAI-compatible proxy** (`hermes proxy`) behind a single swappable `judge()` adapter — riding in-plan OAuth (no per-token API billing, matches MR-1), and serving as the de-facto OPEN-6 router endpoint for this consumer. Distillation starts on Hermes's GPT-5.5 tier (TOOL-3); `judge()` keeps a Claude adapter (`claude -p` or Anthropic API) a one-file swap if quality demands the Sonnet/Opus family.
+**Why:** automation is operator-domain (OM-1), but the shared single-writer can't be a Hermes agent — so split **ownership** (neutral standalone infra) from **endpoint** (Hermes proxy). Proxy beats `hermes -z` one-shot (no CLI startup per call) beats API key (billing). Model *family* is a measure-then-tune call, deliberately not locked.
+**Open:** GPT-5.5-vs-Claude for distillation quality — decide after first real runs; converges with OPEN-6 (the proxy *is* the router here). **Depth:** DESIGN §5 + log 2026-06-23.
+
 ---
 
 ## Retrieval & tooling evaluations
@@ -235,6 +241,17 @@ add an analysis file + a row here. Map:
 **Decision:** four docs, no overlap — `STATE.md` (roadmap/status) · `DECISIONS.md` (terse decision ledger + open decisions) · `decisions/<topic>.md` (deep analysis / content goldmine) · `memory/DESIGN.md` + siblings (integrated spec) · `log/` (chronology). A decision lands in DECISIONS first; STATE gets a one-line pointer only if the roadmap moves. Global `~/CLAUDE.md` stays a thin pointer to STATE (map lives in STATE header; behavioral rule in working-rhythm memory).
 **Why:** STATE had merged roadmap + decisions + research and the same facts diverged across STATE/DESIGN (DESIGN stayed stale on the retrieval engine). One-fact-one-home (our memory doctrine applied to our docs) kills the divergence; the split index+analysis keeps the ledger scannable while preserving reasoning as mineable content.
 **Rejected:** full-ADR ledger entries (too much ceremony); one rich DECISIONS.md (grows to 800+ lines, buries content); folding decisions into DESIGN.md (no home for cross-cutting operating-model/tooling decisions). **No standalone `research/` folder [2026-06-22]:** research earns a home only by *becoming* a decision — its valuable residue lives in `decisions/<topic>.md`; raw research that led to no decision isn't separately archived. **Depth:** decisions/doc-architecture.md.
+
+---
+
+## Open-source
+
+### OSS-1 · Cockpit designed open-source-from-the-start; public = system, private = data  [Locked 2026-06-23; publish deferred]
+**Decision:** the cockpit is built to be **open-sourceable from day one**, but **not published yet** — polish happens before publishing (a later track, not now). Boundary: **public = the *system*** (engine code, `memory/DESIGN.md`, `DECISIONS.md`, the `decisions/` goldmine, `skills/`, `bootstrap.mjs`); **private = the *data*** (`memory/scopes/`, `memory/knowledge/` — identity, logs, distilled knowledge). The clone-clean discipline MEM-23 already mandates (no hardcoded paths, secrets out of tree, deps pinned) does double duty: VM-isolation-readiness **and** open-source-readiness — same cost, two payoffs.
+**Implemented now (cheap, non-disruptive):** the public cockpit repo **gitignores the private data dirs** + engine runtime, so private data **never enters the soon-to-be-public history**. `bootstrap.mjs` is the source of truth for the (gitignored) data-tree shape — recreated on a clone, so the public repo stays data-free.
+**Deferred to OSS-polish (before publishing):** (a) the **private data repo** + the reconciler's git audit-trail commit target (MEM-9/MEM-10 two-phase commit needs a git home for nodes — stood up at Phase 3, when nodes first exist); (b) **STATE.md + `log/` disposition** (they carry venture/personal strategy → sanitize, mirror, or keep private); (c) license, public README, example/seed data, secret-scan.
+**Why (career):** `job-search` + `content` are live scopes. A public, well-reasoned agent-OS is reasoning-as-portfolio (the `decisions/` files *show judgment* — the scarcest senior/staff signal), feeds the build-in-public content flywheel (DOC-1 already writes decisions as content material), and builds AI-search visibility (the GEO surface). **Risk controlled structurally:** the data/secret boundary is enforced by the gitignore split, not by discipline.
+**Relates:** MEM-23 (clone-clean), MEM-10 (owned-markdown git), DOC-1 (decisions as content), CLAUDE.md client-data guardrail (public repo = non-confidential cockpit only), MEM-25 (reconciler is the data-repo's committer). **Depth:** `decisions/open-sourcing.md`.
 
 ---
 
