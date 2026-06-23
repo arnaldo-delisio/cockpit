@@ -55,8 +55,8 @@ bridge wired. This is **execution, not design**.
 | Phase | What | Status |
 |-------|------|--------|
 | 0 | Re-orient + create this tracker | ✅ done |
-| 1 | Bootstrap the tree (MEM-13 / §6a.3) | ⏳ proposing |
-| 2 | Capture hooks (MEM-16/22 / §9) | ☐ |
+| 1 | Bootstrap the tree (MEM-13 / §6a.3) | ✅ done |
+| 2 | Capture hooks (MEM-16/22 / §9) | ⏳ next |
 | 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ☐ |
 | 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ☐ |
 | 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | ☐ |
@@ -65,16 +65,16 @@ bridge wired. This is **execution, not design**.
 
 ## Phase detail + acceptance
 
-### Phase 1 — Bootstrap  (MEM-13 / §6a.3)  [mechanical]
-- [ ] 1.1 Idempotent op (safe re-run; creates only what's missing).
-- [ ] 1.2 `knowledge/nodes/` + placeholder `INDEX.md`.
-- [ ] 1.3 `scopes/{global,cockpit,content,job-search}/{identity,log,staging,sources}/`; seed LIVE
-      scopes only (dormant materialize via same fn at re-onboarding, OPEN-7); NO `vault/` (MEM-23).
-- [ ] 1.4 Seeds: `soul.md` (global identity) + per-scope identity stub; append-only mode until
-      ≥1 centroid/cluster.
-- [ ] 1.5 Decide keep/drop the untracked test transcript
-      `scopes/cockpit/sources/2026-06-22-so-you-learned-claude-now-what.md`.
-- **Acceptance:** re-run is a no-op; tree matches §6a.3; existing `/watch` sources untouched; clone-clean.
+### Phase 1 — Bootstrap  (MEM-13 / §6a.3)  [mechanical]  ✅ DONE 2026-06-23 → `memory/engine/bootstrap.mjs`
+- [x] 1.1 Idempotent op (safe re-run; creates only what's missing; never overwrites a file).
+- [x] 1.2 `knowledge/nodes/` + placeholder `INDEX.md`.
+- [x] 1.3 `scopes/{global,cockpit,content,job-search}/{identity,log,staging,sources}/`; LIVE scopes
+      only via `ensureScope()` (dormant materialize via the same fn at re-onboarding, OPEN-7); NO `vault/`.
+- [x] 1.4 Seeds: `global/identity/soul.md` (= global identity, §3) + `<scope>.md` identity stub per
+      other scope. (Append-only mode is a reconciler concern, Phase 3 — bootstrap just lays the tree.)
+- [x] 1.5 Test transcript REMOVED (user call).
+- **Acceptance MET:** re-run = no-op ✓; tree matches §6a.3 ✓; `/watch` `sources/` dirs preserved ✓;
+  clone-clean (paths relative to script) ✓; data gitignored from public history (`check-ignore` ✓).
 
 ### Phase 2 — Capture hooks  (MEM-16/22 / §9)  [mechanical, dumb capture]
 - [ ] 2.1 Session-boundary capture → append near-raw, judgment-free to scope `staging/`; scope
@@ -140,5 +140,8 @@ bridge wired. This is **execution, not design**.
 
 ## Current position
 
-**Phase 0 done + grey areas resolved** (MEM-25, OSS-1 captured). **Building Phase 1** (bootstrap +
-gitignore split + remove test transcript).
+**Phases 0–1 done.** Tree bootstrapped + data walled from public git (OSS-1). **Next: Phase 2 —
+capture hooks** (MEM-16/22 / §9): `Stop`/`PreCompact`/`SessionEnd` → append near-raw, judgment-free
+to scope `staging/`; mechanical scope-stamp + salience markers. Open Phase-2 grey areas to settle on
+the nod: the `cwd → scope` map + the homeless live scopes (`content`/`job-search` have no
+`~/projects/` dir → need cwd-map + env/flag override).
