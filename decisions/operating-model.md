@@ -123,5 +123,5 @@ This also keeps the cockpit lean. Skills at `~/.cockpit/skills/` are the live sy
 
 - `~/.cockpit/STATE.md` — "Operating model (locked)" section (primary)
 - `~/.cockpit/DECISIONS.md` — OM-1, OM-2, OM-3, OM-4, OM-6 (locked entries)
-- `~/.cockpit/engine/DESIGN.md` — §12 (Multi-agent fleet), §3 (The two axes)
+- `~/.cockpit/memory-engine/DESIGN.md` — §12 (Multi-agent fleet), §3 (The two axes)
 - `~/.cockpit/log/2026-06.md` — "2026-06-18 — Cockpit bootstrap" entry (Key decisions, Open/deferred)

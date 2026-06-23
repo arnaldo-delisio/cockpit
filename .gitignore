@@ -11,13 +11,13 @@ vault/
 
 # Private memory DATA repo (OSS-1, Option D 2026-06-23). memory/ is its OWN git repo holding
 # ONLY data (identity/logs/staging/sources/knowledge) — NEVER in the public cockpit history.
-# Public = the system (engine/ + engine/DESIGN.md + skills); private = the data. engine/bootstrap.mjs
-# recreates this tree on a clone, so the public repo stays data-free + clone-clean.
+# Public = the system (memory-engine/ + memory-engine/DESIGN.md + skills); private = the data.
+# memory-engine/bootstrap.mjs recreates this tree on a clone, so the public repo stays data-free.
 memory/
 
 # Engine runtime — deps pinned in package.json, never committed (the HF model cache lives in
 # ~/.cache/huggingface, outside the repo).
-engine/node_modules/
+memory-engine/node_modules/
 
 # OS cruft
 .DS_Store

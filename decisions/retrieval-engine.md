@@ -146,4 +146,4 @@ Not explicitly evaluated as a named option in the source material; the design ch
 - `STATE.md` (HEAD at 2026-06-21) — "RETRIEVAL ENGINE — DECIDED" bullet, "Reconcile memory systems — UPDATED 2026-06-21", "Hot-cache / master-index tiering" in §7
 - `log/2026-06.md` — entry "2026-06-21 (cont 2) — Retrieval engine decided: AnythingLLM in, NotebookLM out"
 - `DECISIONS.md` — MEM-15 (retrieval engine), TOOL-1 (NotebookLM dropped), MEM-10 (store of record)
-- `engine/DESIGN.md` — §7 (Retrieval), §6 (Walling), §11 (Reconciling the 3 prior systems)
+- `memory-engine/DESIGN.md` — §7 (Retrieval), §6 (Walling), §11 (Reconciling the 3 prior systems)

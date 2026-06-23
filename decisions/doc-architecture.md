@@ -26,7 +26,7 @@ A second need surfaced mid-consolidation: the decision *reasoning* (options weig
 | `STATE.md` | roadmap, build sequence, status, done, pending | terse, churns freely |
 | `DECISIONS.md` | locked decisions: choice + why + rejected alternatives; open decisions | terse ledger, scannable, ID'd |
 | `decisions/<topic>.md` | the full analysis behind a meaty decision: options, pros/cons, reasoning, sources | rich, narrative, one file = one content unit |
-| `engine/DESIGN.md` (+ siblings) | integrated spec of how a system works | rich, current-state |
+| `memory-engine/DESIGN.md` (+ siblings) | integrated spec of how a system works | rich, current-state |
 | `log/YYYY-MM.md` | what happened when | chronological, append-only |
 
 Each references the others; none restate. A decision lands in DECISIONS.md first; STATE gets a one-line status pointer only if the roadmap moves; the deep reasoning goes in `decisions/<topic>.md`; the resulting system spec (if built) lives in DESIGN.md.

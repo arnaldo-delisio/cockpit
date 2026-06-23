@@ -33,7 +33,7 @@ before laying memory's git posture in Phase 1, even though publishing itself is 
 
 | | Public (the system) | Private (the data) |
 |---|---|---|
-| **What** | engine code (`engine/`), `engine/DESIGN.md`, `DECISIONS.md`, `decisions/`, `skills/`, `bootstrap.mjs`, the shell skeletons | `memory/scopes/` (identity, logs, staging, sources), `memory/knowledge/` (nodes, INDEX) |
+| **What** | engine code (`memory-engine/`), `memory-engine/DESIGN.md`, `DECISIONS.md`, `decisions/`, `skills/`, `bootstrap.mjs`, the shell skeletons | `memory/scopes/` (identity, logs, staging, sources), `memory/knowledge/` (nodes, INDEX) |
 | **Nature** | reusable architecture + reasoning — the thing others would clone | personal/operational content — only meaningful to this operator |
 | **Git** | the public cockpit repo | gitignored from public; private versioning finalized at OSS-polish |
 

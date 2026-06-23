@@ -20,7 +20,7 @@ import { constants } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));   // ~/.cockpit/engine (public system code)
+const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));   // ~/.cockpit/memory-engine (public system code)
 const REPO_ROOT = resolve(ENGINE_DIR, '..');     // ~/.cockpit — for friendly logging only
 export const MEMORY_ROOT = resolve(REPO_ROOT, 'memory');   // private DATA repo — also imported by capture.mjs
 

@@ -126,5 +126,5 @@ The vault rule is locked independently of the topology decision: a `vault/` dire
 - `~/.cockpit/STATE.md` (HEAD) — "PATH TOPOLOGY — DECIDED (2026-06-20, after grey-area pass + video NVkRkioBXQc)" section
 - `~/.cockpit/log/2026-06.md` — "2026-06-20 (night) — `hermes update` verified + grey areas closed; memory topology DECIDED"
 - `~/.cockpit/DECISIONS.md` — MEM-13 (Path topology, Locked 2026-06-20)
-- `~/.cockpit/engine/DESIGN.md` — §4 (Storage & ownership)
+- `~/.cockpit/memory-engine/DESIGN.md` — §4 (Storage & ownership)
 - Video NVkRkioBXQc — Agent Zero docs framework; source of the navigated-vs-queried insight
