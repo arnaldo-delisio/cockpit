@@ -40,7 +40,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 
 ## Model routing — policy
 - **Opus** orchestrates / control-plane: reasoning, decisions, synthesis (inline).
-- **Sonnet** executes: research, bulk, summaries, parallel fan-out.
+- **Sonnet** executes: research, bulk, summaries, parallel fan-out. When dispatching research/bulk to Sonnet, **pin `model: sonnet`** (it does not default) and constrain the subagent to **summarize-only** — Opus keeps all judgment ([[delegate-research-to-sonnet-summarize-only]]).
 - **Haiku** mechanical: git plumbing, rote transforms.
 - Skills carry their own model binding. Mechanism → Model Routing dive in `~/.cockpit/STATE.md`.
 
