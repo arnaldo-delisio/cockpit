@@ -60,7 +60,7 @@ bridge wired. This is **execution, not design**.
 | 2 | Capture hooks (MEM-16/22 / §9) | ✅ done |
 | 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ✅ done (v1) |
 | 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ✅ done (v1) |
-| 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | ☐ |
+| 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | 🔄 A (Claude-side) DONE; B (Hermes) + C (close-out) pending |
 
 ---
 
@@ -149,17 +149,20 @@ bridge wired. This is **execution, not design**.
 ### Phase 5 — Cutover + salvage  (checklist 1b/c + 2; TOOL-6)  [sequencing = option 1: Claude-side close-out, then ONE batched Hermes push]
 
 **A. Claude-side close-out (do first — quick wins, no Hermes):**
-- [ ] A1 **Migrate the 2 keepers into the new graph** — `cockpit-working-rhythm` (behavioral → projects to
+- [x] A1 **Migrate the 2 keepers into the new graph** — `cockpit-working-rhythm` (behavioral → projects to
       CLAUDE.md) + `live-work-focus` (project knowledge), via staging → reconciler → nodes (MEM-15 keepers-
       carry-forward). They are NOT yet in the new system (reconciler has only distilled live staging). **MUST
       precede A3** — else disabling native injection loses always-loaded doctrine.
-- [ ] A2 Verify the keepers resurface (projection and/or retrieval) before native injection stops.
-- [ ] A3 **Disable the native Claude auto-memory writer.** GROUNDED 2026-06-23: there is **NO `autoMemory`
-      disable key in `~/.claude/settings.json`** (the feature runs at the Claude-Code default, not a local
-      setting); our capture hooks are already wired correctly. Verify the exact mechanism via the
-      **claude-code-guide agent** (do NOT guess a settings key). The keepers (`MEMORY.md` + the 2 files) live
-      at `~/.claude/projects/-home-arn--cockpit/memory/`, injected into every session today.
-- [ ] A4 Confirm clean-start (MEM-15): only the keepers carried; no other legacy folded.
+- [x] A2 Keepers resurface verified — all 3 migrated nodes always-load at root (projection) AND rank #1 on
+      their natural retrieval queries. Done before native injection was disabled (A3).
+- [x] A3 **Native Claude auto-memory writer DISABLED** (2026-06-23). CORRECTION to the earlier grounding: the
+      key DOES exist — `autoMemoryEnabled` (confirmed in the v2.1.186 binary AND its settings schema). It is
+      **all-or-nothing**: `false` disables native READ *and* WRITE of the auto-memory dir (no write-only toggle).
+      Set `"autoMemoryEnabled": false` in `~/.claude/settings.json` (user scope, via the update-config skill).
+      Safe because our system now owns both sides (capture hooks write; projection/retrieval read). Applies on
+      next session start. **Clone-clean TODO:** mirror this key into `bootstrap.sh` (settings.json is out-of-repo).
+- [x] A4 Clean-start confirmed (MEM-15): only the working-rhythm doctrine carried (3 nodes); `live-work-focus`
+      intentionally dropped; old native files left INERT at `~/.claude/projects/-home-arn--cockpit/memory/`.
 
 **B. Hermes integration push (ONE batch — memory side + identity side together):**
 - [ ] B1 Bridge Hermes as a staging WRITER (TOOL-6); cut over Hermes LAST. (Capture is Claude-only today.)
@@ -208,6 +211,21 @@ bridge wired. This is **execution, not design**.
   mapped · env-override). MEM-14 clarified + DESIGN §9. Root cause was paperclip (a systemd service running
   `npx paperclipai run` on a restart loop) — **removed entirely** (service+processes+package; agency work product
   preserved in scratch git history, video dropped). Next paperclip-shaped risk = Hermes; the fix covers it structurally.
+- **2026-06-23 — Phase 5 A1+A2 DONE (keeper migration).** The `cockpit-working-rhythm` keeper was migrated as
+  **3 hand-authored global behavioral nodes** (`delegate-research-to-sonnet-summarize-only`, `advise-dont-just-list-options`,
+  `verify-before-freezing-cross-family-adversarial-panel`) — NOT distiller-fed (curated keepers must not be re-distilled;
+  lossy). `claim=fact` + provenance citation `keeper:cockpit-working-rhythm`. The `live-work-focus` keeper was
+  **intentionally dropped** (clean-start MEM-15; user owns work focus). All 3 verified retrievable (#1 each) and
+  always-loaded at root: `advise`+`adversarial` as projected fence rules in `shells/CLAUDE.md`; `delegate-to-sonnet`
+  **hand-folded into the skeleton's Model routing** (see next note). INDEX regenerated; engine code untouched.
+- **2026-06-23 — Gate non-determinism is a known wart (projection).** The projection gate is a `judge('hard')` LLM
+  call, so it is NON-DETERMINISTIC: identical inputs yielded 3 rules on a dry-run and 2 on the immediately-following real
+  run (dropping the borderline `delegate-to-sonnet`, which overlaps the skeleton's Model routing section), and the
+  `inputs=<sha8>` damping then FREEZES whichever set it happened to land on. Resolution for this case: fold genuinely-
+  foundational doctrine into the **hand skeleton** (deterministic always-load) and let the gate keep only emergent rules —
+  clean mapping (skeleton = curated stable doctrine, fence = emergent behaviors). General fix deferred → DESIGN/backlog
+  (steady-state projection can flip membership on borderline nodes; options: vote/quorum the gate, or a stickiness bias
+  toward the last committed set).
 
 ---
 
@@ -231,9 +249,20 @@ bridge wired. This is **execution, not design**.
 
 ## Current position
 
-**Phases 0–4 done — projection is built + validated; only cutover (Phase 5) remains.** Substrate
-bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine run
-end-to-end, and the reconciler now also projects behavioral nodes into scope-routed CLAUDE.md.
+**Phases 0–4 done; Phase 5 A (Claude-side close-out) DONE — next is Phase 5 B (the batched Hermes push).**
+Substrate bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine
+run end-to-end, the reconciler projects behavioral nodes into scope-routed CLAUDE.md, and the Claude-side
+cutover off native auto-memory is complete.
+
+✅ **Phase 5 A (Claude-side close-out) built + validated** (2026-06-23). The `cockpit-working-rhythm` keeper
+migrated as 3 hand-authored global behavioral nodes (delegate-to-sonnet / advise-don't-list / verify-before-
+freezing); `live-work-focus` intentionally dropped (clean-start). All 3 always-load at root (advise + adversarial
+as projected fence rules in `shells/CLAUDE.md`; delegate-to-sonnet hand-folded into the skeleton's Model routing
+after the gate flip-flopped on it — gate non-determinism wart recorded) and rank #1 in retrieval. Native
+auto-memory DISABLED via `"autoMemoryEnabled": false` (key confirmed in v2.1.186; all-or-nothing read+write).
+Clean-start confirmed; old native files left inert. **Next: Phase 5 B** — batched Hermes push (B1 staging-writer
+bridge + B2 salvage/merge-chain verify + B3 real `shells/SOUL.md` + wiring + B4 SOUL.md-projection decision),
+then C (internalization audit + tracker delete) ONLY on explicit say-so.
 
 ✅ **Phase 4 (CLAUDE.md projection) built + validated** (2026-06-23) → `memory-engine/projection.mjs`,
 wired into `reconcile.mjs` as PHASE 3. Judge gate (drops skeleton-dupes + transient, rephrases survivors),
