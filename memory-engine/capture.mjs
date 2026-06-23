@@ -20,9 +20,16 @@ import { resolve, relative, sep, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { ensureScope, MEMORY_ROOT } from './bootstrap.mjs';
 
-// ---------- scope from cwd (folder map) + optional manual override ----------
-function scopeFromCwd(cwd) {
-  if (process.env.COCKPIT_SCOPE) return process.env.COCKPIT_SCOPE.trim();   // manual override
+// ---------- scope decision (DESIGN §9; unmapped = opt-in only, 2026-06-23) ----------
+// A session is captured ONLY if it resolves to a REAL scope. Priority:
+//   1. COCKPIT_SCOPE env  — explicit pre-launch override
+//   2. mapped cwd         — ~/projects/<x> -> <x>;  ~/.cockpit -> cockpit
+//   3. #capture opt-in    — the user typed #capture / #capture:<scope> in the session
+//   else -> null = DO NOT CAPTURE. Unmapped cwds no longer fabricate a `global` scope, so
+//   autonomous agents (Hermes, ex-paperclip) and incidental sessions in random dirs never
+//   auto-enroll into memory. This is not an engagement gate (MEM-14 forbids those) — it refuses
+//   to invent a scope where none exists; #capture is how the user supplies one when the folder can't.
+function mappedScope(cwd) {
   const home = homedir();
   const projects = resolve(home, 'projects');
   if (cwd === projects || cwd.startsWith(projects + sep)) {
@@ -31,7 +38,15 @@ function scopeFromCwd(cwd) {
   }
   const cockpit = resolve(home, '.cockpit');
   if (cwd === cockpit || cwd.startsWith(cockpit + sep)) return 'cockpit';
-  return 'global';                             // fallback
+  return null;                                 // unmapped — no fabricated scope
+}
+
+// #capture / #capture:<scope> in the user's text opts an otherwise-unmapped session in.
+// Collision-free like #good/#bad (MEM-22); bare #capture -> global, #capture:<scope> -> that scope.
+const RE_CAPTURE = /(?:^|\s)#capture(?::([a-z0-9][a-z0-9-]*))?\b/i;
+function captureOptIn(userText) {
+  const m = userText.match(RE_CAPTURE);
+  return m ? (m[1] || 'global').toLowerCase() : null;
 }
 
 // ---------- salience (MEM-22): tier-1 sentinels + tier-2 regex over user text ----------
@@ -84,7 +99,21 @@ async function main() {
   const tpath = hook.transcript_path;
   if (!tpath || !existsSync(tpath)) return;            // nothing to capture
 
-  const scope = scopeFromCwd(cwd);
+  // Read the transcript FIRST — scope (for unmapped cwds) can depend on its content (#capture).
+  const lines = readFileSync(tpath, 'utf8').split('\n').filter(Boolean);
+  const entries = [];
+  for (const ln of lines) { try { entries.push(JSON.parse(ln)); } catch { /* skip bad line */ } }
+
+  // Decide scope. Unmapped + no #capture opt-in -> skip entirely (no fabricated `global`).
+  let scope = process.env.COCKPIT_SCOPE ? process.env.COCKPIT_SCOPE.trim() : mappedScope(cwd);
+  if (!scope) {
+    const userText = entries
+      .filter((e) => e.message && e.message.role === 'user')
+      .map((e) => textOf(e.message.content)).join('\n');
+    scope = captureOptIn(userText);
+    if (!scope) return;                                // not a real scope, not opted in -> don't capture
+  }
+
   await ensureScope(scope);                            // lazily materializes dormant scopes (OPEN-7)
 
   const stagingDir = resolve(MEMORY_ROOT, 'scopes', scope, 'staging');
@@ -95,9 +124,6 @@ async function main() {
   let cursor = 0;
   try { cursor = JSON.parse(readFileSync(cursorFile, 'utf8')).count || 0; } catch { /* fresh */ }
 
-  const lines = readFileSync(tpath, 'utf8').split('\n').filter(Boolean);
-  const entries = [];
-  for (const ln of lines) { try { entries.push(JSON.parse(ln)); } catch { /* skip bad line */ } }
   if (entries.length <= cursor) return;                // nothing new
 
   const fresh = entries.slice(cursor);

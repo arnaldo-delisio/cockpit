@@ -167,6 +167,13 @@ bridge wired. This is **execution, not design**.
   the reconciler: `gpt-5.5` (hard) + `gpt-5.4-mini` (bulk), both in-plan Codex; Gemma throttle-fallback (MR-1).
   Process lesson → new build-doctrine rule in `shells/CLAUDE.md` ("Ground in the decisions first"): read the
   relevant DECISIONS/decisions before building (I'd proposed off-doctrine Gemini before reading TOOL-3/MR-1).
+- **2026-06-23 — Capture-scope fix: unmapped cwd = opt-in only (`capture.mjs`).** A global-scope reconcile
+  distilled **autonomous paperclip-agent heartbeats** — the `global` catch-all was auto-enrolling any session
+  in an unmapped dir. Fix: capture only on a REAL scope (`COCKPIT_SCOPE` > mapped cwd > `#capture`/`#capture:<scope>`
+  sentinel); unmapped → **skip** (no fabricated `global`). Tested 5/5 (skip · #capture→global · #capture:scope ·
+  mapped · env-override). MEM-14 clarified + DESIGN §9. Root cause was paperclip (a systemd service running
+  `npx paperclipai run` on a restart loop) — **removed entirely** (service+processes+package; agency work product
+  preserved in scratch git history, video dropped). Next paperclip-shaped risk = Hermes; the fix covers it structurally.
 
 ---
 
@@ -184,8 +191,9 @@ two-phase commit · guard 5/5 · audit diff). Grey areas resolved → both Optio
 `stg:<anchor>:<sha8>` (DESIGN §6a.1); identity-home = flat pool (MEM-11 clarified). Bugs caught: main()-on-import
 (guarded), double-wrapped wikilinks (fixed). `cockpit` committed in the private `memory/` repo (12 nodes).
 
-**Next:** ① reconcile the remaining scopes (`global` = 8 staging files; `content`/`job-search` empty) — pure
-operation, the path is proven; ② **Phase 4 — CLAUDE.md projection (MEM-20 / §6a.4)**: project high-centrality
+**Next:** ① ~~reconcile `global`~~ — DONE-as-wiped: `global` was autonomous paperclip-agent noise, not real
+work; paperclip removed + global staging wiped + capture-scope fix shipped (unmapped = `#capture` opt-in only).
+`content`/`job-search` empty. ② **Phase 4 — CLAUDE.md projection (MEM-20 / §6a.4)**: project high-centrality
 `type ∈ {identity, feedback}` nodes into scope-routed fenced CLAUDE.md regions. Deferred from v1 (non-blocking):
 nightly "dreaming" two-tempo pass (3.4), degree-centrality/community recompute (bootstrap mode, §6a.3), and
 logs/sources ingestion (v1 reads staging only).
