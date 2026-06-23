@@ -58,7 +58,7 @@ bridge wired. This is **execution, not design**.
 | 1 | Bootstrap the tree (MEM-13 / §6a.3) | ✅ done |
 | 2 | Capture hooks (MEM-16/22 / §9) | ✅ done |
 | 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ✅ done (v1) |
-| 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ☐ |
+| 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ✅ done (v1) |
 | 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | ☐ |
 
 ---
@@ -124,16 +124,26 @@ bridge wired. This is **execution, not design**.
 - **Acceptance:** staging → well-formed canonical nodes; retrieval returns sensible ranked nodes on
   real queries; two-phase commit crash-safe + idempotent; instability guard triggers; audit diff emitted.
 
-### Phase 4 — CLAUDE.md projection  (MEM-20 / §6a.4)
-- [ ] 4.1 Reconciler writes ONLY the fenced managed region
-      (`<!-- managed:reconciler:begin/end -->`), full-interior idempotent replace; skeleton untouched.
-- [ ] 4.2 Promote high-centrality BEHAVIORAL nodes only (`type ∈ {identity, feedback}`);
-      facts/knowledge stay retrieval-gated. Gate (when_to_use + adversarial lens) + cap 10–15;
-      over-cap → highest-centrality wins, rest logged.
-- [ ] 4.3 Scope routing: global→`~/CLAUDE.md`; cockpit→`~/.cockpit/CLAUDE.md`; project→that project.
-      Per-rule `[[source-node]]` backlink.
-- **Acceptance:** behavioral nodes project into correct scoped CLAUDE.md, fenced/capped/backlinked;
-  hand-authored skeleton untouched; re-run idempotent.
+### Phase 4 — CLAUDE.md projection  (MEM-20 / §6a.4)  ✅ DONE 2026-06-23 → `memory-engine/projection.mjs`
+- [x] 4.1 Writes ONLY the fenced managed region (`<!-- managed:reconciler:begin/end -->`), full-interior
+      idempotent replace; hand-authored skeleton untouched. Append-at-EOF if no fence (verified on a
+      skeletoned file + an empty file).
+- [x] 4.2 Promotes high-centrality BEHAVIORAL nodes only (`type ∈ {identity, feedback}`, ≥ floor 0.6);
+      facts/knowledge stay retrieval-gated. **Gate = one batched `judge('hard')` per scope** handed
+      candidates + the already-loaded skeleton → drops skeleton-dupes + transient scaffolding, rephrases
+      survivors as imperative one-liners; cap 12; over-cap → highest-centrality wins, rest logged. Under-
+      promotion (even to 0) is correct. Damping: input signature in the begin-marker (`inputs=<sha8>`)
+      → unchanged scope = no-op (no judge, no write), stable diffs.
+- [x] 4.3 Scope routing **(resolved — loader-indirection + public/private split):** global→`shells/CLAUDE.md`
+      (public, via `~/CLAUDE.md` loader); cockpit→`~/.cockpit/CLAUDE.md` (public, in-repo); data scopes→
+      `memory/scopes/<x>/CLAUDE.md` (PRIVATE memory repo, via a thin `~/projects/<x>/CLAUDE.md` loader).
+      Reconciler commits ONLY its own repos (cockpit + memory), never foreign. Per-rule `[[source-node]]`.
+- **Acceptance MET:** dry-run over the live pool projects 2–4 well-formed cockpit rules into a fenced,
+  capped, backlinked region below the hand skeleton; gate drops dupes/transient; idempotent via `inputs=`
+  hash; skeleton untouched. Real isolated write → `~/.cockpit/CLAUDE.md` committed to the cockpit repo.
+- **Build call:** projection isolated in `projection.mjs` (mirrors nodes/retrieval split), run from
+  `reconcile.mjs` as PHASE 3 + the no-work path + dry-run preview. Cockpit `~/.cockpit/CLAUDE.md` got a
+  thin hand-authored skeleton (Orient-before-building + DOC-1 pointer) above the fence.
 
 ### Phase 5 — Cutover + salvage  (checklist 1b/c + 2; TOOL-6)
 - [ ] 5.1 Disable native Claude writer (`autoMemoryDirectory`/disable) — kills #63903 token tax.
@@ -177,10 +187,29 @@ bridge wired. This is **execution, not design**.
 
 ---
 
+- **2026-06-23 — CLAUDE.md projection routing → loader-indirection + public/private split (Phase 4).**
+  Reframed from the lock's "project → that project's CLAUDE.md" after a topology brainstorm with the user.
+  Projection writes the scope's CANONICAL file in a reconciler-OWNED repo; foreign project/client repos
+  hold only a thin hand-written loader that `@`-imports it (same trick as `~/CLAUDE.md`→`shells/`). System
+  scopes (global→`shells/CLAUDE.md`, cockpit→`~/.cockpit/CLAUDE.md`) project PUBLIC (cockpit repo); data
+  scopes (project/venture/client) project PRIVATE (`memory/scopes/<x>/CLAUDE.md`, rides the node commit).
+  Reconciler commits cockpit + memory only — never foreign. Global writes the canonical shell, NOT the
+  `~/CLAUDE.md` pure-pointer loader. Filed → DECISIONS MEM-20 amendment + DESIGN §5/§6a.4 + the deep-dive
+  Resolution section. Code: `projection.mjs` `targetFor()` + `commitFile()` (cockpit-or-memory repo only).
+
 ## Current position
 
-**Phases 0–3 done — the reconciler is built + validated.** Substrate bootstrapped, capture hooks live
-globally, and the single-writer reconciler + MEM-24 retrieval engine now run end-to-end.
+**Phases 0–4 done — projection is built + validated; only cutover (Phase 5) remains.** Substrate
+bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine run
+end-to-end, and the reconciler now also projects behavioral nodes into scope-routed CLAUDE.md.
+
+✅ **Phase 4 (CLAUDE.md projection) built + validated** (2026-06-23) → `memory-engine/projection.mjs`,
+wired into `reconcile.mjs` as PHASE 3. Judge gate (drops skeleton-dupes + transient, rephrases survivors),
+fenced managed region with `inputs=` damping, resolved scope routing (loader-indirection + public/private
+split). Cockpit `~/.cockpit/CLAUDE.md` created with a thin hand skeleton + the projected fence (2 rules over
+the committed 12-node pool), committed to the cockpit repo. Acceptance met.
+
+**Earlier (Phases 0–3):**
 
 ✅ **Reconciler v1 built + validated on `cockpit`** (2026-06-23). Files in `memory-engine/`: `retrieval.mjs`
 (all-MiniLM-L6-v2 ONNX embed, brute-force cosine, ripgrep, RRF k=60, disposable JSON cache), `nodes.mjs`

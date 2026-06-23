@@ -29,6 +29,7 @@ import { createHash } from 'node:crypto';
 import { judge } from './judge.mjs';
 import { MEMORY_ROOT, NODES_DIR, INDEX_FILE, loadPool, writeNode, serializeNode, uniqueId } from './nodes.mjs';
 import { EmbeddingCache, syncCache, embed, contentHash, cosineTopK } from './retrieval.mjs';
+import { project, printProjection } from './projection.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -236,7 +237,12 @@ async function main() {
           turnIndex, digest, totalTurns: parsed.turns.length, consumed });
       }
     }
-    if (!work.length) { console.log('reconcile: no new staging to process.'); return; }
+    if (!work.length) {
+      console.log('reconcile: no new staging to process.');
+      // still project the existing pool into CLAUDE.md (MEM-20) — damping makes it a no-op if unchanged.
+      printProjection(await project(await loadPool(), { dryRun }), dryRun);
+      return;
+    }
 
     // ---- load pool + embedding cache ----
     const pool = await loadPool();
@@ -289,7 +295,11 @@ async function main() {
     // ---- audit summary ----
     printAudit(audit, dryRun, bootstrapMode);
 
-    if (dryRun) { console.log('\n(--dry-run: no writes, no commits, staging not advanced.)'); return; }
+    if (dryRun) {
+      printProjection(await project(pool, { dryRun: true }), true);   // preview the CLAUDE.md projection too
+      console.log('\n(--dry-run: no writes, no commits, staging not advanced.)');
+      return;
+    }
 
     // ---- PHASE 1: write nodes + INDEX, commit ----
     const touched = [...audit.added, ...audit.modified, ...audit.superseded].map((x) => x.id);
@@ -316,6 +326,9 @@ async function main() {
     await mkdir(AUDIT_DIR, { recursive: true });
     await writeFile(resolve(AUDIT_DIR, `${nowISO().replace(/[:.]/g, '-')}.md`), auditMarkdown(audit), 'utf8');
     console.log(`\nreconcile: committed. ${touched.length} node file(s) written.`);
+
+    // ---- PHASE 3: project behavioral nodes into scope-routed CLAUDE.md (MEM-20 / §6a.4) ----
+    printProjection(await project(pool, { dryRun: false }), false);
   } finally {
     await releaseLock();
   }

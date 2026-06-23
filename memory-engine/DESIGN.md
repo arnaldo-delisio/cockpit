@@ -98,7 +98,7 @@ The reconciler is also the **sole writer of the "managed regions" of CLAUDE.md f
 
 - **What promotes:** high-`centrality` behavioral nodes only — `type ∈ {identity, feedback}` (operating rules). Facts/`knowledge` stay retrieval-gated and never promote.
 - **Gate + cap:** `when_to_use` + an adversarial structure/accuracy lens decides survivors; the BUILD-4 `## Rules` 10–15 cap keeps the always-load layer thin (BUILD-2).
-- **Scope routing (mandatory):** a node promotes only into the CLAUDE.md of *its own scope* — global → `~/CLAUDE.md`; cockpit → `~/.cockpit`'s CLAUDE.md; project/client → that project's CLAUDE.md. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules).
+- **Scope routing (mandatory):** a node promotes only into the canonical always-load file of *its own scope*, reached via the loader trick — global → `shells/CLAUDE.md` (the `~/CLAUDE.md` loader `@`-imports it, not the loader itself); cockpit → `~/.cockpit/CLAUDE.md` (load-point already in-repo); data scopes (project/venture/client) → `memory/scopes/<x>/CLAUDE.md` in the PRIVATE memory repo, with `~/projects/<x>/CLAUDE.md` a thin hand-written loader importing it. System scopes project public (cockpit repo), data scopes private (memory repo); the reconciler commits only repos it owns — never a foreign project/client repo. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules).
 - **One home (DOC-1):** the graph node is the home; the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited. The hand-authored skeleton (BUILD-2) lives in a separate block of the same file. Edit the rule → edit the node → next reconciler run refreshes the projection.
 
 This is the **self-evolving-CLAUDE.md mechanism** — one distiller (the reconciler), not a second external miner, so `headroom learn` is retired (TOOL-2). **Concrete fence contract → §6a.4.** Depth: `decisions/claude-md-projection.md`.
@@ -191,7 +191,7 @@ The reconciler's managed region inside any target `CLAUDE.md`:
 - **Strict fence discipline.** The reconciler reads/replaces ONLY the bytes between `:begin` and `:end`; everything outside (the BUILD-2 hand-authored skeleton) is never touched. No fence present → append one at EOF after a blank line. Present → full-replace the interior (idempotent).
 - **Backlink per rule** (`[[source-node]]`) — the node is the home (DOC-1); the block is a regenerable cache.
 - **Cap** ≤ BUILD-4's 10–15 `## Rules`; over-cap → highest-`centrality` wins, the rest stay retrieval-gated; the audit diff (§10) records what was dropped (no silent truncation).
-- **Scope routing.** A node projects ONLY into its own scope's CLAUDE.md (global→`~/CLAUDE.md`; cockpit→`~/.cockpit/CLAUDE.md`; project/client→that project's).
+- **Scope routing.** A node projects ONLY into its own scope's canonical always-load file: global→`shells/CLAUDE.md` (public; via the `~/CLAUDE.md` loader); cockpit→`~/.cockpit/CLAUDE.md` (public, load-point in-repo); data scopes→`memory/scopes/<x>/CLAUDE.md` (PRIVATE memory repo, loaded by a thin `~/projects/<x>/CLAUDE.md` loader). Foreign project/client repos stay pristine — the reconciler writes only the cockpit + memory repos it owns. [2026-06-23 build: loader-indirection + public/private split resolved.]
 - **What projects.** Only behavioral nodes (`type ∈ {identity, feedback}`) project; facts/`knowledge` stay retrieval-gated and never promote.
 
 ---
