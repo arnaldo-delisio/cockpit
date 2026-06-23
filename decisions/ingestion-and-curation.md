@@ -211,8 +211,8 @@ Four categories, **grounded in what Claude Code actually exposes** (verified aga
 | `DECISIONS.md` — MEM-18 | Evergreen vs ephemeral; volatile data pointed-to not ingested |
 | `DECISIONS.md` — TOOL-2 | Headroom rejection; feedback-mining (`learn`) parked |
 | `DECISIONS.md` — OM-5 | Model routing policy: Opus/Sonnet judgment, Haiku plumbing |
-| `memory/DESIGN.md` §8 | Full ingestion section: capture layer, three modes, dream mechanics, model routing detail |
-| `memory/DESIGN.md` §10 | Self-improvement + GC: character-cap backstop, supersede vs delete, OPEN-2 |
+| `engine/DESIGN.md` §8 | Full ingestion section: capture layer, three modes, dream mechanics, model routing detail |
+| `engine/DESIGN.md` §10 | Self-improvement + GC: character-cap backstop, supersede vs delete, OPEN-2 |
 | `log/2026-06.md` — 2026-06-21 entry | Narrative of the design session: reversals, tombstone rejection reasoning, deletion aggressiveness deferral, user quotes validating Haiku routing, parked feedback mining |
 | `STATE.md` — INGESTION + CURATION MODEL — DECIDED | Top-level lock confirmation and cross-references |
 | `DECISIONS.md` — MEM-21 | Tagging model: free-form, reconciler-normalized, no fixed taxonomy |

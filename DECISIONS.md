@@ -4,7 +4,7 @@ Durable record of **what we chose and why** — the anti-re-litigation doc. If a
 is settled, it lives here (not in STATE, not buried in the log).
 
 **One fact, one home.** A decision (choice + why + rejected alternatives) lives here only.
-`STATE.md` = roadmap/status (links here). `memory/DESIGN.md` (+ future siblings) = integrated
+`STATE.md` = roadmap/status (links here). `engine/DESIGN.md` (+ future siblings) = integrated
 spec of how a system works. `log/` = chronological narrative. Each references this; none restate it.
 
 **Format:** concise. `ID · title [Status date]` → Decision / Why / Rejected (if any) / Depth link.
@@ -46,7 +46,7 @@ add an analysis file + a row here. Map:
 
 ### OM-3 · Identity is per-context, never global  [Locked 2026-06-18]
 **Decision:** every real identity (boringscale, personal, each client) is a scoped project; the global files are the *operator's* meta-identity, not any context's.
-**Depth:** memory/DESIGN.md §3.
+**Depth:** engine/DESIGN.md §3.
 
 ### OM-4 · Skills, not docs-about-skills  [Locked 2026-06-18]
 **Decision:** doctrine lives inside each `SKILL.md`; no parallel architecture doc per capability.
@@ -238,7 +238,7 @@ add an analysis file + a row here. Map:
 **Decision:** three-tier (`~/.cockpit/skills/` cross-brain shared · `~/.hermes/skills/` Hermes-only native · `~/projects/<p>/.claude/skills/` project-specific). Dual-brain bridge = Hermes `external_dirs` + Claude Code SessionStart symlink hook, wired when the first shared skill lands. Skill format = SKILL.md + YAML + Purpose + Procedure + `## Rules` (10–15 cap, reconciler-only promotion).
 
 ### DOC-1 · Documentation model = one fact, one home  [Locked 2026-06-21]
-**Decision:** four docs, no overlap — `STATE.md` (roadmap/status) · `DECISIONS.md` (terse decision ledger + open decisions) · `decisions/<topic>.md` (deep analysis / content goldmine) · `memory/DESIGN.md` + siblings (integrated spec) · `log/` (chronology). A decision lands in DECISIONS first; STATE gets a one-line pointer only if the roadmap moves. Global `~/CLAUDE.md` stays a thin pointer to STATE (map lives in STATE header; behavioral rule in working-rhythm memory).
+**Decision:** four docs, no overlap — `STATE.md` (roadmap/status) · `DECISIONS.md` (terse decision ledger + open decisions) · `decisions/<topic>.md` (deep analysis / content goldmine) · `engine/DESIGN.md` + siblings (integrated spec) · `log/` (chronology). A decision lands in DECISIONS first; STATE gets a one-line pointer only if the roadmap moves. Global `~/CLAUDE.md` stays a thin pointer to STATE (map lives in STATE header; behavioral rule in working-rhythm memory).
 **Why:** STATE had merged roadmap + decisions + research and the same facts diverged across STATE/DESIGN (DESIGN stayed stale on the retrieval engine). One-fact-one-home (our memory doctrine applied to our docs) kills the divergence; the split index+analysis keeps the ledger scannable while preserving reasoning as mineable content.
 **Rejected:** full-ADR ledger entries (too much ceremony); one rich DECISIONS.md (grows to 800+ lines, buries content); folding decisions into DESIGN.md (no home for cross-cutting operating-model/tooling decisions). **No standalone `research/` folder [2026-06-22]:** research earns a home only by *becoming* a decision — its valuable residue lives in `decisions/<topic>.md`; raw research that led to no decision isn't separately archived. **Depth:** decisions/doc-architecture.md.
 
@@ -247,9 +247,9 @@ add an analysis file + a row here. Map:
 ## Open-source
 
 ### OSS-1 · Cockpit designed open-source-from-the-start; public = system, private = data  [Locked 2026-06-23; publish deferred]
-**Decision:** the cockpit is built to be **open-sourceable from day one**, but **not published yet** — polish happens before publishing (a later track, not now). Boundary: **public = the *system*** (engine code, `memory/DESIGN.md`, `DECISIONS.md`, the `decisions/` goldmine, `skills/`, `bootstrap.mjs`); **private = the *data*** (`memory/scopes/`, `memory/knowledge/` — identity, logs, distilled knowledge). The clone-clean discipline MEM-23 already mandates (no hardcoded paths, secrets out of tree, deps pinned) does double duty: VM-isolation-readiness **and** open-source-readiness — same cost, two payoffs.
-**Implemented now (cheap, non-disruptive):** the public cockpit repo **gitignores the private data dirs** + engine runtime, so private data **never enters the soon-to-be-public history**. `bootstrap.mjs` is the source of truth for the (gitignored) data-tree shape — recreated on a clone, so the public repo stays data-free.
-**Deferred to OSS-polish (before publishing):** (a) the **private data repo** + the reconciler's git audit-trail commit target (MEM-9/MEM-10 two-phase commit needs a git home for nodes — stood up at Phase 3, when nodes first exist); (b) **STATE.md + `log/` disposition** (they carry venture/personal strategy → sanitize, mirror, or keep private); (c) license, public README, example/seed data, secret-scan.
+**Decision:** the cockpit is built to be **open-sourceable from day one**, but **not published yet** — polish happens before publishing (a later track, not now). Boundary: **public = the *system*** (`engine/` code, `engine/DESIGN.md`, `DECISIONS.md`, the `decisions/` goldmine, `skills/`); **private = the *data*** (`memory/scopes/`, `memory/knowledge/` — identity, logs, distilled knowledge). The clone-clean discipline MEM-23 already mandates (no hardcoded paths, secrets out of tree, deps pinned) does double duty: VM-isolation-readiness **and** open-source-readiness — same cost, two payoffs.
+**Implemented (Option D, 2026-06-23):** `engine/` (code) + `engine/DESIGN.md` (spec) moved to the cockpit top level (public repo); `memory/` is now its **own standalone private git repo** holding ONLY data, gitignored wholesale from the public cockpit history. `engine/bootstrap.mjs` is the source of truth for the data-tree shape — recreated on a clone, so the public repo stays data-free. This private data repo **is** the reconciler's two-phase-commit target (MEM-9/MEM-10), now in place.
+**Deferred to OSS-polish (before publishing):** (a) a **private off-machine remote** for the data repo (backup; local-only for now); (b) **STATE.md + `log/` disposition** (they carry venture/personal strategy → sanitize, mirror, or keep private); (c) license, public README, example/seed data, secret-scan.
 **Why (career):** `job-search` + `content` are live scopes. A public, well-reasoned agent-OS is reasoning-as-portfolio (the `decisions/` files *show judgment* — the scarcest senior/staff signal), feeds the build-in-public content flywheel (DOC-1 already writes decisions as content material), and builds AI-search visibility (the GEO surface). **Risk controlled structurally:** the data/secret boundary is enforced by the gitignore split, not by discipline.
 **Relates:** MEM-23 (clone-clean), MEM-10 (owned-markdown git), DOC-1 (decisions as content), CLAUDE.md client-data guardrail (public repo = non-confidential cockpit only), MEM-25 (reconciler is the data-repo's committer). **Depth:** `decisions/open-sourcing.md`.
 

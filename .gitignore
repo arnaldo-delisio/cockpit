@@ -2,7 +2,6 @@
 # git push is a leak path that OS perms don't cover. Locked rule:
 # vault/ is local-only. See STATE.md → Memory architecture → Vault rule.
 vault/
-memory/scopes/*/vault/
 
 # Secrets — shared-key home both brains source; NEVER committed (clone-clean, MEM-23).
 # Track .env.example instead. See skills/*/SKILL.md for which keys each skill reads.
@@ -10,16 +9,15 @@ memory/scopes/*/vault/
 .env.*
 !.env.example
 
-# Private memory DATA — never in the (open-source-ready) public history (OSS-1).
-# Public = the system (engine + specs + skills); private = the data (identity/logs/knowledge).
-# bootstrap.mjs is the source of truth for this tree — recreated on a clone; the public repo
-# stays data-free + clone-clean. Private versioning + reconciler commit-target finalized at build.
-memory/scopes/
-memory/knowledge/
+# Private memory DATA repo (OSS-1, Option D 2026-06-23). memory/ is its OWN git repo holding
+# ONLY data (identity/logs/staging/sources/knowledge) — NEVER in the public cockpit history.
+# Public = the system (engine/ + engine/DESIGN.md + skills); private = the data. engine/bootstrap.mjs
+# recreates this tree on a clone, so the public repo stays data-free + clone-clean.
+memory/
 
 # Engine runtime — deps pinned in package.json, never committed (the HF model cache lives in
 # ~/.cache/huggingface, outside the repo).
-memory/engine/node_modules/
+engine/node_modules/
 
 # OS cruft
 .DS_Store

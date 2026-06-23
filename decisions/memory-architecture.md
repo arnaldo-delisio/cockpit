@@ -205,6 +205,6 @@ These do not conflict. The reconciler is infrastructure — a specialized proces
 ## Sources
 
 - `~/.cockpit/DECISIONS.md` — MEM-1, MEM-2, MEM-8, MEM-9, MEM-10, MEM-11 (primary decision trail)
-- `~/.cockpit/memory/DESIGN.md` — §2 core principles, §3 two axes, §4 storage + node schema, §5 write model + reconciler contract (integrated spec)
+- `~/.cockpit/engine/DESIGN.md` — §2 core principles, §3 two axes, §4 storage + node schema, §5 write model + reconciler contract (integrated spec)
 - `~/.cockpit/STATE.md` (HEAD) — "Memory architecture — designed" section + "Post-completeness-review hardening" subsection (Blocker 2 + reconciler contract origin)
 - `~/.cockpit/log/2026-06.md` — "2026-06-19 — MEMORY deep dive → design closed + hardened" entry (chronological narrative of the session where these decisions were made)

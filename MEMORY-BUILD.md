@@ -7,7 +7,7 @@ the end of the build** (final step of Phase 5); the permanent record lives in ST
 
 It holds **status + build-local micro-decisions + resume pointer only** — it never restates the
 specs. The specs are the home (one-fact-one-home, DOC-1):
-- **How it works** → `memory/DESIGN.md` (§4 schema · §5 reconciler+projection · §6 VM boundary ·
+- **How it works** → `engine/DESIGN.md` (§4 schema · §5 reconciler+projection · §6 VM boundary ·
   §6a LOCKED formats · §7 retrieval · §8 ingestion · §9 logging · §10 GC · §13 backlog)
 - **Why / rejected** → `DECISIONS.md` (MEM-8,9,10,11,12,13,16,20,21,22,23,24; TOOL-6; BUILD-1/3/4)
 - **Deep reasoning** → `decisions/{path-topology,retrieval-engine,ingestion-and-curation,claude-md-projection}.md`
@@ -28,7 +28,7 @@ bridge wired. This is **execution, not design**.
 1. **One Node ESM project, in-repo.** Bootstrap + reconciler + projection + retrieval are one Node
    codebase (MEM-24 fixed the engine as Node; the reconciler `require`s it in-process, §7). Capture
    hooks register as Claude Code shell hooks but invoke a Node script.
-2. **Code home = `~/.cockpit/memory/engine/`** (Node code); data home = `knowledge/` + `scopes/`
+2. **Code home = `~/.cockpit/engine/`** (Node code); data home = `knowledge/` + `scopes/`
    (§6a.3). `engine/node_modules/` + the ONNX model cache → gitignored; deps pinned in `package.json`.
 3. **Hooks live in `~/.claude/`** (outside the repo, like the skills bridge) → `bootstrap.sh`
    territory; the scripts they call live in-repo.
@@ -65,7 +65,7 @@ bridge wired. This is **execution, not design**.
 
 ## Phase detail + acceptance
 
-### Phase 1 — Bootstrap  (MEM-13 / §6a.3)  [mechanical]  ✅ DONE 2026-06-23 → `memory/engine/bootstrap.mjs`
+### Phase 1 — Bootstrap  (MEM-13 / §6a.3)  [mechanical]  ✅ DONE 2026-06-23 → `engine/bootstrap.mjs`
 - [x] 1.1 Idempotent op (safe re-run; creates only what's missing; never overwrites a file).
 - [x] 1.2 `knowledge/nodes/` + placeholder `INDEX.md`.
 - [x] 1.3 `scopes/{global,cockpit,content,job-search}/{identity,log,staging,sources}/`; LIVE scopes
@@ -76,7 +76,7 @@ bridge wired. This is **execution, not design**.
 - **Acceptance MET:** re-run = no-op ✓; tree matches §6a.3 ✓; `/watch` `sources/` dirs preserved ✓;
   clone-clean (paths relative to script) ✓; data gitignored from public history (`check-ignore` ✓).
 
-### Phase 2 — Capture hooks  (MEM-16/22 / §9)  [mechanical, dumb capture]  ✅ DONE 2026-06-23 → `memory/engine/capture.mjs`
+### Phase 2 — Capture hooks  (MEM-16/22 / §9)  [mechanical, dumb capture]  ✅ DONE 2026-06-23 → `engine/capture.mjs`
 - [x] 2.1 Near-raw, judgment-free append to scope `staging/<date>__<session>.md`; scope stamped
       mechanically via `scopeFromCwd` (folder map: `~/projects/<x>`→`<x>`; `~/.cockpit`→`cockpit`;
       fallback `global`; `COCKPIT_SCOPE` manual override). NO model call (v1 skips the optional Haiku
@@ -97,6 +97,14 @@ bridge wired. This is **execution, not design**.
 - **Lives outside the repo (→ `bootstrap.sh`):** `~/.claude/settings.json` hooks + `~/projects/{content,job-search}/`.
 
 ### Phase 3 — Reconciler + retrieval  (MEM-8/9/11/12/24 / §5/§7/§10)  [RIGOROUS — the heart]
+- **3.0 Setup forks (before the reconciler runs):**
+  - [x] **Private data repo stood up (Option D, 2026-06-23):** `engine/` + `engine/DESIGN.md` → cockpit
+        top level (public); `memory/` = standalone private git repo (data only, gitignored wholesale).
+        This **is** the reconciler's two-phase-commit target. bootstrap+capture verified from new paths.
+  - [~] **`hermes proxy` verified — needs login.** Proxy fronts `nous` (Nous Portal = planned GPT-5.5,
+        TOOL-3) + `xai`; both **not logged in**. BLOCKS `judge()`. User action: run `hermes portal`
+        (interactive OAuth — can't be headless), confirm GPT-5.5 offered, then `hermes proxy status` = ready.
+  - [ ] **v1 = single on-demand batch command first** (nightly timer later).
 - [ ] 3.1 Node writer: staging/logs/sources → canonical nodes per §6a.1. Field-ownership split
       (capture stamps scope/created/raw claim+citation; reconciler owns centrality/cluster/tags/
       claim-downgrade/updated/last_synced). Mint `feedback` nodes from MEM-22 markers.
@@ -145,14 +153,24 @@ bridge wired. This is **execution, not design**.
   `memory/scopes/` + `memory/knowledge/` gitignored from the public repo now; private data repo +
   reconciler commit-target deferred to Phase 3. `bootstrap.mjs` = source of truth for the data tree.
 - **2026-06-23 — Test transcript: REMOVE** (user call). Clean start; no real sources until live capture.
+- **2026-06-23 — Private data repo = Option D** (user call). `engine/` (code) + `engine/DESIGN.md` (spec)
+  moved to cockpit top level (public); `memory/` is now its **own standalone private git repo** holding
+  only data, gitignored wholesale from the cockpit repo. Chosen over B (detached git-dir, no moves) and
+  C (`memory/data/` subdir). Costlier in churn but gives a clean conventional data repo. `bootstrap.mjs`
+  `MEMORY_ROOT` now = `resolve(REPO_ROOT,'memory')`; settings.json hook paths + cockpit `.gitignore`
+  rewired; doc refs swept (log/ left as historical). Finalizes OSS-1's deferred data-repo + commit-target.
 
 ---
 
 ## Current position
 
-**Phases 0–2 done.** Substrate bootstrapped (data walled from public git, OSS-1) + capture hooks live
-globally (fail-safe, idempotent, salience-tagging). **Next: Phase 3 — the reconciler** (the heart,
-RIGOROUS): staging/logs/sources → canonical nodes (§6a.1) + the MEM-24 retrieval stack, two-phase
-commit, instability guard. This is where the first deps land (`package.json` + `@huggingface/transformers`),
-the private data repo + reconciler commit-target get stood up (OSS-1 deferred item), and `judge()` →
-`hermes proxy` (MEM-25) is wired. Likely its own session.
+**Phases 0–2 done; Phase 3 setup underway.** Substrate bootstrapped + capture hooks live globally
+(fail-safe, idempotent, salience-tagging). Phase 3 setup: ✅ **private data repo stood up** (Option D —
+`engine/`+spec public at cockpit top level; `memory/` = standalone private git repo = reconciler's
+commit target); ⏳ **`hermes proxy` verified but needs `hermes portal` login** (Nous Portal/GPT-5.5 not
+authenticated — BLOCKS `judge()`; user action).
+
+**Next (the reconciler itself):** first deps land (`package.json` + `@huggingface/transformers` in
+`engine/`); build `judge()` against the proxy once logged in; then the §5 writer + MEM-24 retrieval
+stack + two-phase commit + instability guard. Start with a single on-demand batch command (nightly
+timer later). The reconciler commits to the `memory/` data repo. Likely its own session.

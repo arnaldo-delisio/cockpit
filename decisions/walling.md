@@ -145,5 +145,5 @@ The three layers reinforce each other: OS perms wall local reads; the substrate 
 
 - `DECISIONS.md` — MEM-3, MEM-4, MEM-5, MEM-6, MEM-7, MEM-13, MEM-15, TOOL-1, TOOL-2
 - `STATE.md` — "Knowledge flows, client data is walled"; "HOW to wall — DECIDED: (c) split substrate"; "WALLING enforcement — DECIDED (fork B): keys not prompts"; "Blocker 1 — write-path walling via SUBSTRATE-PROVENANCE"; "Post-completeness-review hardening (adversarial Sonnet panel)"; "Vault rule [LOCKED, topology-independent]"
-- `memory/DESIGN.md` — §6 (Walling — read + write)
+- `engine/DESIGN.md` — §6 (Walling — read + write)
 - `log/2026-06.md` — 2026-06-19 memory deep dive; 2026-06-21 (cont 2) retrieval engine decision + context-mode walling flag

@@ -51,7 +51,7 @@ Every cell of the grid exists:
 ## 4. Storage & ownership
 
 - **Store of record:** distilled wikilinked markdown files + **git** underneath (history, rollback, audit). Local-first, embedded — no cloud DB (no Turso) for the store of record.
-- **Git boundary (OSS-1):** the *system* (engine + specs + skills) is public-ready in the cockpit repo; the *data* (`scopes/`, `knowledge/`) is **private** — gitignored from the public repo now (`bootstrap.mjs` recreates the tree on a clone, so the public history stays data-free). The data's own versioning + the reconciler's two-phase-commit git target are finalized at build (Phase 3, when nodes first exist).
+- **Git boundary (OSS-1, Option D 2026-06-23):** the *system* lives in the **public cockpit repo** — `~/.cockpit/engine/` (code: bootstrap, capture, reconciler) + `engine/DESIGN.md` (this spec) + `skills/`. The *data* lives in `~/.cockpit/memory/` as its **own standalone private git repo** (identity, logs, staging, sources, `knowledge/`) — the cockpit repo gitignores `memory/` wholesale, so the public history is data-free, and the data repo is the reconciler's two-phase-commit target (§5). `engine/bootstrap.mjs` recreates the data tree on a clone.
 - **Layout (MEM-13):** knowledge graph = one flat pool `~/.cockpit/memory/knowledge/nodes/` (scope = node frontmatter, master-index over the pool); memory substrate = centralized `~/.cockpit/memory/scopes/<scope>/{identity,log,staging,sources}/`. `sources/` = raw capture layer (§8). Each project's co-located `CLAUDE.md` carries a one-line pointer to its scope.
 - **Graph structure** = wikilinks (`[[ ]]`, Obsidian-navigable) between markdown nodes.
 
