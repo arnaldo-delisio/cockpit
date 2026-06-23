@@ -137,7 +137,7 @@ entities:                   # free-form labels, reconciler-normalized
   concepts: [...]
   people: [...]
   products: [...]
-citation: <log-hash | url>  # required iff claim: fact
+citation: <stg:SESSION:SHA8 | url>  # required iff claim: fact (else reconciler downgrades to inference)
 schema_version: 1
 created: <ISO8601>
 updated: <ISO8601>          # reconciler
@@ -149,7 +149,9 @@ last_synced: <ISO8601>      # retrieval-engine cache freshness (§7)
 Links: [[other-node]], [[another-node]]
 ```
 
-**Ownership split.** Capture/staging stamps **mechanically**: `scope`, `created`, raw `claim`+`citation`. The reconciler (sole writer, §5) owns everything else — `centrality`, `cluster`, `tags`/`entities` normalization, `claim` downgrade, `updated`, `last_synced`. Agents never hand-set centrality/cluster.
+**Ownership split.** Capture/staging stamps **mechanically**: `scope`, `created`, and the raw provenance (`session_anchor` + `transcript:` path). The reconciler (sole writer, §5) owns everything else — `centrality`, `cluster`, `tags`/`entities` normalization, `claim`, `citation`, `updated`, `last_synced`. Agents never hand-set centrality/cluster.
+
+**Citation token [2026-06-23, build].** A claim distilled from a captured staging turn cites it as **`stg:<session_anchor>:<sha8(turn-text)>`** — a stable, verifiable coordinate into the raw transcript (the staging header carries the `transcript:` path; the sha8 pins the exact turn). The reconciler mints it from the backing turn the distiller names; a node with **no** backing turn (pure synthesis) carries no citation and is `inference` (MEM-9 downgrade). A real log-entry-hash scheme can supersede this once `logs/` is populated — the `claim` semantics ("is this backed by a captured moment?") are unchanged.
 
 **`feedback` nodes.** Behavioral lessons (corrections, confirmed approaches) are minted by the reconciler from MEM-22 salience markers (`#good`/`#bad` sentinels + inferred correction/decision spans) — not hand-typed at capture. They are the projection input for MEM-20 alongside `identity` nodes.
 

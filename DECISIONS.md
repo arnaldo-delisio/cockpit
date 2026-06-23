@@ -111,7 +111,7 @@ add an analysis file + a row here. Map:
 
 ### MEM-11 · Node schema  [Locked 2026-06-19pm]
 **Decision:** each node carries `type · fact|inference · centrality · cluster · scope · schema_version`. Retrieval favors high-centrality; community detection shrinks search space.
-**Build-spec [2026-06-22]:** concrete YAML+prose file template + capture-vs-reconciler field-ownership split. **Amended by MEM-23:** `substrate` + `sensitivity` fields dropped (intra-graph walling retired — the VM is the boundary); `scope` stays as organization. **Depth:** DESIGN.md §4 + §6a.1.
+**Build-spec [2026-06-22]:** concrete YAML+prose file template + capture-vs-reconciler field-ownership split. **Amended by MEM-23:** `substrate` + `sensitivity` fields dropped (intra-graph walling retired — the VM is the boundary); `scope` stays as organization. **Clarified [2026-06-23, build]:** identity has ONE home — the flat pool (`knowledge/nodes/`, `type: identity`), exactly like `knowledge`/`feedback` nodes. Reconciler-minted identity lands there and is what MEM-20 promotes. The seeded `scopes/<scope>/identity/` files (MEM-13/§6a.3) are bootstrap stubs + Phase-4 projection/skeleton targets, **not** a second canonical graph home — resolves the §6a.1-template-vs-MEM-13-layout ambiguity in favor of DOC-1 (one home). **Depth:** DESIGN.md §4 + §6a.1.
 
 ### MEM-12 · Git plumbing = Haiku; judgment escalates  [Locked 2026-06-19]
 **Decision:** add/commit/push/snapshot = Haiku tier; real conflict / history repair / rollback decisions escalate to Sonnet/Opus (rare by design — single-writer + append-only ⇒ ~no conflicts). Git-doing Haiku inherits scope binding.

@@ -57,7 +57,7 @@ bridge wired. This is **execution, not design**.
 | 0 | Re-orient + create this tracker | ✅ done |
 | 1 | Bootstrap the tree (MEM-13 / §6a.3) | ✅ done |
 | 2 | Capture hooks (MEM-16/22 / §9) | ✅ done |
-| 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ⏳ next |
+| 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ✅ done (v1) |
 | 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ☐ |
 | 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | ☐ |
 
@@ -105,20 +105,22 @@ bridge wired. This is **execution, not design**.
         to `hermes -z "<prompt>" --ignore-rules -t ''` (clean stdout, verified). Tiered in-plan Codex per
         TOOL-3: `hard`→`gpt-5.5`, `bulk`→`gpt-5.4-mini`. Gemma throttle-fallback (MR-1). **Nous/proxy +
         `hermes portal` login DROPPED** — proxy can't reach Codex; no login needed (blocker gone).
-  - [ ] **v1 = single on-demand batch command first** (nightly timer later).
-- [ ] 3.1 Node writer: staging/logs/sources → canonical nodes per §6a.1. Field-ownership split
+  - [x] **v1 = single on-demand batch command** (`node reconcile.mjs [--dry-run] [--scope <s>]`); nightly timer later.
+- [x] 3.1 Node writer: staging/logs/sources → canonical nodes per §6a.1. Field-ownership split
       (capture stamps scope/created/raw claim+citation; reconciler owns centrality/cluster/tags/
       claim-downgrade/updated/last_synced). Mint `feedback` nodes from MEM-22 markers.
-- [ ] 3.2 Retrieval (MEM-24): embed node prose (re-embed on content-hash change), Float32Array+JSON
+- [x] 3.2 Retrieval (MEM-24): embed node prose (re-embed on content-hash change), Float32Array+JSON
       cache, brute-force cosine + ripgrep, RRF k=60 fuse. Batch embeds ≤8 (avoid 8GB single-batch spike).
-- [ ] 3.3 Write-safety (MEM-9): two-phase commit (write+git commit, THEN mark staging consumed);
+- [x] 3.3 Write-safety (MEM-9): two-phase commit (write+git commit, THEN mark staging consumed);
       lockfile fencing; conflict precedence source-trust → recency → human-escalation.
-- [ ] 3.4 Two tempos (MEM-16): continuous bookkeeping at capture boundaries + nightly heavy
+- [~] 3.4 Two tempos (MEM-16): **DEFERRED — v1 is the on-demand light pass only.** Nightly heavy
+      "dreaming" (§8 mode 2), pending-review queue beyond the held-merge case, and the unmarked-salience
+      sweep land with the timer. The cheap-digest mechanism (salience gather → model judges digest) IS built. continuous bookkeeping at capture boundaries + nightly heavy
       distillation/"dreaming" (§8 mode 2) → pending-review queue, lower trust. Cheap pass digests
       MEM-22-flagged spans; expensive model judges digest, not the firehose; + unmarked-salience sweep.
-- [ ] 3.5 Instability guard: hold rewrite on citation-drop / centrality-delta / cluster-flip over
+- [x] 3.5 Instability guard: hold rewrite on citation-drop / centrality-delta / cluster-flip over
       threshold. Per-run audit diff (added/modified/deleted/held + reasons).
-- [ ] 3.6 Regenerate `INDEX.md`. Model routing: judgment = Sonnet min / Opus hard; Haiku = git plumbing.
+- [x] 3.6 Regenerate `INDEX.md`. Model routing: judgment = Sonnet min / Opus hard; Haiku = git plumbing.
 - **Acceptance:** staging → well-formed canonical nodes; retrieval returns sensible ranked nodes on
   real queries; two-phase commit crash-safe + idempotent; instability guard triggers; audit diff emitted.
 
@@ -170,19 +172,20 @@ bridge wired. This is **execution, not design**.
 
 ## Current position
 
-**Phases 0–2 done; Phase 3 setup DONE — building the reconciler.** Substrate bootstrapped + capture hooks
-live globally. Phase 3 setup both forks closed: ✅ **private data repo** (Option D — `memory-engine/`+spec
-public; `memory/` = standalone private git repo = commit target); ✅ **model access** (MEM-25 revised —
-`judge()` shells to `hermes -z`, tiered in-plan Codex gpt-5.5/gpt-5.4-mini per TOOL-3; no proxy, no login).
+**Phases 0–3 done — the reconciler is built + validated.** Substrate bootstrapped, capture hooks live
+globally, and the single-writer reconciler + MEM-24 retrieval engine now run end-to-end.
 
-✅ **`judge()` built + smoke-tested** (`memory-engine/judge.mjs`, 2026-06-23) — `judge(prompt,{tier,json,retries})`
-shells to `hermes -z … --provider openai-codex -m <model> --ignore-rules -t ''`, tolerant JSON parse + retry;
-live `bulk` call returned clean parsed JSON. Model path proven end-to-end.
+✅ **Reconciler v1 built + validated on `cockpit`** (2026-06-23). Files in `memory-engine/`: `retrieval.mjs`
+(all-MiniLM-L6-v2 ONNX embed, brute-force cosine, ripgrep, RRF k=60, disposable JSON cache), `nodes.mjs`
+(node frontmatter I/O), `reconcile.mjs` (lock → staging digest → `judge()` distill → embed/dedup → instability
+guard → two-phase commit → INDEX + audit). Deps pinned: `@huggingface/transformers@4.2.0`, `js-yaml@5.1.0`.
+**All 5 acceptance criteria pass** (well-formed §6a.1 nodes · sensible retrieval · crash-safe+idempotent
+two-phase commit · guard 5/5 · audit diff). Grey areas resolved → both Option A: citation token
+`stg:<anchor>:<sha8>` (DESIGN §6a.1); identity-home = flat pool (MEM-11 clarified). Bugs caught: main()-on-import
+(guarded), double-wrapped wikilinks (fixed). `cockpit` committed in the private `memory/` repo (12 nodes).
 
-**Next (the reconciler itself — START HERE next session):** ① deps (`package.json` + `@huggingface/transformers`
-in `memory-engine/`, pinned); ② §5 writer: staging → canonical nodes per §6a.1 (field-ownership split; mint
-`feedback` nodes from MEM-22 markers), calling `judge()` for the model work; ③ MEM-24 retrieval (embed, cosine,
-ripgrep, RRF) `require`d in-process; ④ MEM-9 two-phase commit (write+commit to the `memory/` data repo, THEN
-mark staging consumed) + lockfile + instability guard; ⑤ regenerate `INDEX.md`. v1 = single on-demand batch
-command (nightly timer later). Build rigorously (the heart); per build-doctrine, re-read DESIGN §5/§7/§10 +
-DECISIONS MEM-8/9/24 first.
+**Next:** ① reconcile the remaining scopes (`global` = 8 staging files; `content`/`job-search` empty) — pure
+operation, the path is proven; ② **Phase 4 — CLAUDE.md projection (MEM-20 / §6a.4)**: project high-centrality
+`type ∈ {identity, feedback}` nodes into scope-routed fenced CLAUDE.md regions. Deferred from v1 (non-blocking):
+nightly "dreaming" two-tempo pass (3.4), degree-centrality/community recompute (bootstrap mode, §6a.3), and
+logs/sources ingestion (v1 reads staging only).
