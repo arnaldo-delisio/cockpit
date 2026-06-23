@@ -98,6 +98,7 @@ The reconciler is also the **sole writer of the "managed regions" of CLAUDE.md f
 
 - **What promotes:** high-`centrality` behavioral nodes only — `type ∈ {identity, feedback}` (operating rules). Facts/`knowledge` stay retrieval-gated and never promote.
 - **Gate + cap:** `when_to_use` + an adversarial structure/accuracy lens decides survivors; the BUILD-4 `## Rules` 10–15 cap keeps the always-load layer thin (BUILD-2).
+- **Determinism + lifecycle (amendment 2026-06-23):** because the gate is a non-deterministic LLM call, the fence has two graduated layers — **Emerging** (the gate's volatile, *sticky* pick) and **Durable** (rules that survived the gate N=3 consecutive reconciles, then held by a counter + node-state and no longer re-judged; auto-demoted when the source node is superseded / falls below floor). The hand skeleton stays the human-only deterministic anchor; promotion is automatic (no human gate). Lifecycle state lives in `memory/.reconciler/projection-state.json`. **Full contract → §6a.4.**
 - **Scope routing (mandatory):** a node promotes only into the canonical always-load file of *its own scope*, reached via the loader trick — global → `shells/CLAUDE.md` (the `~/CLAUDE.md` loader `@`-imports it, not the loader itself); cockpit → `~/.cockpit/CLAUDE.md` (load-point already in-repo); data scopes (project/venture/client) → `memory/scopes/<x>/CLAUDE.md` in the PRIVATE memory repo, with `~/projects/<x>/CLAUDE.md` a thin hand-written loader importing it. System scopes project public (cockpit repo), data scopes private (memory repo); the reconciler commits only repos it owns — never a foreign project/client repo. Preserves BUILD-2/OM-6 (the global root that loads in every session stays free of scope-specific rules).
 - **One home (DOC-1):** the graph node is the home; the CLAUDE.md block is a **generated, fenced projection** (`<!-- managed:reconciler -->`), never hand-edited. The hand-authored skeleton (BUILD-2) lives in a separate block of the same file. Edit the rule → edit the node → next reconciler run refreshes the projection.
 
@@ -178,21 +179,28 @@ One **idempotent** operation lays the tree (safe to re-run; creates only what's 
 
 ### 6a.4 CLAUDE.md projection fence (realizes MEM-20)
 
-The reconciler's managed region inside any target `CLAUDE.md`:
+The reconciler's managed region inside any target `CLAUDE.md`. **Three layers, two of them inside the fence** (the determinism + lifecycle model, MEM-20 amendment 2026-06-23):
 
 ```
-<!-- managed:reconciler:begin schema=1 -->
+## <hand skeleton>            ← human-authored, OUTSIDE the fence; the reconciler never writes it
+<!-- managed:reconciler:begin schema=2 inputs=<gateSig> -->
 ## Rules (projected from memory — do not edit; edit the source node)
+### Durable (auto-graduated — survived N+ reconciles; held until superseded)
 - <rule text> [[source-node]]
-...
+### Emerging (volatile — promotes to Durable after N consecutive reconciles)
+- <rule text> [[source-node]]
 <!-- managed:reconciler:end -->
 ```
 
-- **Strict fence discipline.** The reconciler reads/replaces ONLY the bytes between `:begin` and `:end`; everything outside (the BUILD-2 hand-authored skeleton) is never touched. No fence present → append one at EOF after a blank line. Present → full-replace the interior (idempotent).
-- **Backlink per rule** (`[[source-node]]`) — the node is the home (DOC-1); the block is a regenerable cache.
-- **Cap** ≤ BUILD-4's 10–15 `## Rules`; over-cap → highest-`centrality` wins, the rest stay retrieval-gated; the audit diff (§10) records what was dropped (no silent truncation).
+- **Strict fence discipline.** The reconciler reads/replaces ONLY the bytes between `:begin` and `:end`; everything outside (the BUILD-2 hand-authored skeleton — the deterministic always-load anchor) is never touched. No fence present → append one at EOF after a blank line. Present → full-replace the interior (idempotent).
+- **Why the lifecycle.** The gate is an LLM call → its membership flips on *borderline* nodes, and a pure `inputs=` damping would freeze whichever set it landed on. So inside the fence rules graduate: **Emerging** = the gate's volatile pick, made **sticky** (last run's set fed back: keep unless clearly wrong → hysteresis); a rule the gate keeps `GRADUATE_AFTER` (=3) consecutive reconciles **auto-graduates** to **Durable** and is thereafter held by a counter + node-state, not re-judged each run. Promotion = the gate's *repeated* judgment; a counter sets the timing — automatic, no human gate, no second LLM boundary.
+- **Demotion** is deterministic, never an LLM guess: a Durable rule drops when its source node is superseded or falls below the centrality floor (it leaves the eligible-candidate set). Git is the undo.
+- **Backlink per rule** (`[[source-node]]`) — the node is the home (DOC-1); the block is a regenerable cache. Durable rules join the gate's dedup context so a graduated rule is never re-proposed into Emerging.
+- **State is the home of the lifecycle:** streaks · graduated set · last-emerging · gate-signature, per scope, in `memory/.reconciler/projection-state.json` (committed, sibling of `state.json`). The fence is a pure render of it, so the CLAUDE.md diff only moves when membership moves. Gate damping: the gate is re-run only when its inputs (gate-candidates + skeleton + last emerging) change; otherwise last run's set is reused and streaks still advance.
+- **Cap** ≤ BUILD-4's 10–15 `## Rules` total (Durable + Emerging); Durable earns its place first, Emerging fills the remainder; over-cap → highest-`centrality` wins, the rest stay retrieval-gated; the audit diff (§10) records drops (no silent truncation).
 - **Scope routing.** A node projects ONLY into its own scope's canonical always-load file: global→`shells/CLAUDE.md` (public; via the `~/CLAUDE.md` loader); cockpit→`~/.cockpit/CLAUDE.md` (public, load-point in-repo); data scopes→`memory/scopes/<x>/CLAUDE.md` (PRIVATE memory repo, loaded by a thin `~/projects/<x>/CLAUDE.md` loader). Foreign project/client repos stay pristine — the reconciler writes only the cockpit + memory repos it owns. [2026-06-23 build: loader-indirection + public/private split resolved.]
 - **What projects.** Only behavioral nodes (`type ∈ {identity, feedback}`) project; facts/`knowledge` stay retrieval-gated and never promote.
+- **Reserved escalation:** quorum / best-of-N the gate, if a future multi-scope load makes the Emerging boundary flip again. Not built now (YAGNI).
 
 ---
 
@@ -269,7 +277,7 @@ No rivalry — roles assigned (MEM-15):
 - `schema_version` **migration functions** (keyed `from→to`, in-repo, tested, lazy on read).
 - Reconciler **audit-diff + tombstones** (observability).
 - Dreaming **token/node budget + pending-review queue**.
-- **Projection gate determinism** (MEM-20 / §6a.4): the gate is a `judge('hard')` LLM call → non-deterministic. Identical inputs can yield different rule *sets* run-to-run (observed a 3→2 flip on a borderline node that partially overlaps the hand skeleton's doctrine), and the `inputs=<sha8>` damping then *freezes* whichever set it happened to land on. Mitigations to weigh: quorum the gate (best-of-N / majority), bias toward the last-committed set (stickiness), or keep foundational doctrine in the hand skeleton so only clearly-emergent rules reach the gate (the Phase-5-A workaround). Low urgency at current pool size.
+- ~~**Projection gate determinism**~~ — **RESOLVED 2026-06-23 → MEM-20 amendment + §6a.4** (three-layer fence: human skeleton + auto-graduating Durable + sticky Emerging; counter-driven promotion, deterministic node-state demotion; quorum reserved as the escalation). Built + verified end-to-end.
 - Session **heartbeat** for dead-session detection.
 - Staging **growth cap** (block + warn, never silent drop).
 - Shared **Kanban board write-locking**.

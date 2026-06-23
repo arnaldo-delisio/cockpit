@@ -139,6 +139,10 @@ bridge wired. This is **execution, not design**.
       (public, via `~/CLAUDE.md` loader); cockpit→`~/.cockpit/CLAUDE.md` (public, in-repo); data scopes→
       `memory/scopes/<x>/CLAUDE.md` (PRIVATE memory repo, via a thin `~/projects/<x>/CLAUDE.md` loader).
       Reconciler commits ONLY its own repos (cockpit + memory), never foreign. Per-rule `[[source-node]]`.
+- [x] 4.4 **Gate determinism + fence lifecycle (2026-06-23, supersedes 4.2's single-list `inputs=` damping):**
+      three layers — human **skeleton** (anchor) + auto-graduating **Durable** + sticky **Emerging**; counter-driven
+      promotion (N=3), deterministic node-state demotion; `schema=2` fence is a pure render of
+      `memory/.reconciler/projection-state.json`. See the resolved micro-decision below + MEM-20 amendment. Quorum reserved.
 - **Acceptance MET:** dry-run over the live pool projects 2–4 well-formed cockpit rules into a fenced,
   capped, backlinked region below the hand skeleton; gate drops dupes/transient; idempotent via `inputs=`
   hash; skeleton untouched. Real isolated write → `~/.cockpit/CLAUDE.md` committed to the cockpit repo.
@@ -218,14 +222,20 @@ bridge wired. This is **execution, not design**.
   **intentionally dropped** (clean-start MEM-15; user owns work focus). All 3 verified retrievable (#1 each) and
   always-loaded at root: `advise`+`adversarial` as projected fence rules in `shells/CLAUDE.md`; `delegate-to-sonnet`
   **hand-folded into the skeleton's Model routing** (see next note). INDEX regenerated; engine code untouched.
-- **2026-06-23 — Gate non-determinism is a known wart (projection).** The projection gate is a `judge('hard')` LLM
-  call, so it is NON-DETERMINISTIC: identical inputs yielded 3 rules on a dry-run and 2 on the immediately-following real
-  run (dropping the borderline `delegate-to-sonnet`, which overlaps the skeleton's Model routing section), and the
-  `inputs=<sha8>` damping then FREEZES whichever set it happened to land on. Resolution for this case: fold genuinely-
-  foundational doctrine into the **hand skeleton** (deterministic always-load) and let the gate keep only emergent rules —
-  clean mapping (skeleton = curated stable doctrine, fence = emergent behaviors). General fix deferred → DESIGN/backlog
-  (steady-state projection can flip membership on borderline nodes; options: vote/quorum the gate, or a stickiness bias
-  toward the last committed set).
+- **2026-06-23 — Gate non-determinism: RESOLVED (was a known wart).** The projection gate is a `judge('hard')` LLM
+  call, so its membership flips on borderline nodes (3→2 flip observed) and the old `inputs=<sha8>` damping froze the
+  arbitrary set. **Fixed (design discussion → build, this session) with a three-layer fence + automatic lifecycle**, not a
+  quorum: hand **skeleton** (human-only, deterministic anchor; reconciler never writes it) · **Durable** (rules the gate
+  keeps `GRADUATE_AFTER`=3 consecutive reconciles auto-graduate, then held by a counter + node-state — not re-judged;
+  auto-demoted when the source node is superseded / below floor) · **Emerging** (the gate's volatile pick, made *sticky* —
+  last set fed back, hysteresis not coin-flip). Promotion = the gate's repeated judgment + a counter → **fully automatic,
+  no human gate, no second LLM boundary** (user's explicit call). Lifecycle state → `memory/.reconciler/projection-state.json`
+  (committed); fence is `schema=2` (`### Durable`/`### Emerging`), a pure render. Quorum/best-of-N reserved as escalation
+  (YAGNI). Verified end-to-end on the live pool (streak→graduate→demote, sticky convergence, settled no-op); latent
+  `commitFile` no-op bug found + fixed. Filed → DECISIONS MEM-20 amendment + DESIGN §5/§6a.4 + §13 wart cleared +
+  decisions/claude-md-projection.md Resolution. **Note:** the earlier `delegate-to-sonnet` hand-fold stays (skeleton is
+  still the right home for foundational doctrine — it just shrinks the gate's borderline surface). **SOUL.md (B4) inherits
+  this same three-layer model** when projection extends to it.
 
 ---
 

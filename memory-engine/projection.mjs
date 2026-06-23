@@ -21,9 +21,29 @@
 // durable always-load rules NOT already covered by the skeleton (drops duplicates + transient
 // build-scaffolding). Under-promotion (even to zero rules) is a correct outcome, not a bug.
 //
-// Damping: the input signature is embedded in the begin-marker (`inputs=<sha8>`). If a scope's
-// eligible nodes + skeleton are unchanged since the last projection, the run is a no-op for that
-// scope — no judge call, no write — so CLAUDE.md diffs stay stable run-to-run.
+// THREE-LAYER MODEL (MEM-20 determinism amendment, 2026-06-23). The gate is an LLM call → its
+// membership flips on borderline nodes. We contain that flip instead of letting `inputs=` freeze a
+// coin-flip. A scope's CLAUDE.md now carries three layers:
+//   • HAND SKELETON  — outside the fence; human-authored; the reconciler NEVER writes it.
+//   • DURABLE rules  — inside the fence; rules the gate has kept GRADUATE_AFTER reconciles in a row
+//                      auto-graduate here and are HELD by a counter + node-state (not re-judged each
+//                      run), so they stop flickering. Auto-demoted when their source node is
+//                      superseded or drops below the centrality floor. State is the home; git is undo.
+//   • EMERGING rules — inside the fence; the gate's volatile pick, made STICKY: last run's set is fed
+//                      back so the gate keeps it unless there's a clear reason to change (hysteresis,
+//                      not a fresh coin-flip). Survives N runs → graduates to DURABLE.
+// "AI judgment" drives promotion (the gate's repeated keeping); a counter decides *when* it has earned
+// the durable box — no second LLM boundary, no human gate. Quorum/best-of-N is the reserved escalation
+// if a future multi-scope load makes the emerging boundary flip again (DECISIONS MEM-20).
+//
+// Projection state (streaks · graduated set · last emerging set · gate signature, per scope) lives in
+// `memory/.reconciler/projection-state.json` (committed, sibling of the reconciler's state.json). The
+// CLAUDE.md file is a pure render of that state, so its diff only moves when membership actually moves.
+//
+// Damping: the gate signature (gate candidates + skeleton + last emerging set) is stored per scope. If
+// it is unchanged we REUSE last run's emerging set instead of re-calling the gate — but streak
+// bookkeeping still advances (stickiness guarantees the gate would re-select it), so stable scopes keep
+// graduating cheaply. The gate runs only when its inputs actually change.
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -39,13 +59,16 @@ const execFileP = promisify(execFile);
 
 // --- tunables (grey-area picks; tune after real runs) ---
 const CENTRALITY_FLOOR = 0.6;   // below this, a behavioral node is not "high-centrality" enough to always-load
-const CAP = 12;                 // ≤ BUILD-4's 10–15 cap on the always-load ## Rules block
+const CAP = 12;                 // ≤ BUILD-4's 10–15 cap on the always-load ## Rules block (durable + emerging)
 const PROSE_CHARS = 500;        // per-candidate truncation handed to the gate
+const GRADUATE_AFTER = 3;       // consecutive reconciles a rule must survive the gate before it auto-graduates
+                                // to DURABLE (at on-demand cadence ≈ 3 runs; revisit when the nightly timer lands)
 
 const HOME = homedir();
 const COCKPIT_ROOT = resolve(HOME, '.cockpit');
 const GLOBAL_SKELETON = resolve(COCKPIT_ROOT, 'shells', 'CLAUDE.md'); // canonical global shell (~/CLAUDE.md just imports it)
 const KNOWN_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
+const PROJ_STATE_FILE = resolve(MEMORY_ROOT, '.reconciler', 'projection-state.json'); // committed (sibling of state.json)
 
 const sha8 = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
 const truncate = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
@@ -66,16 +89,25 @@ function targetFor(scope) {
 
 // ---------- fence (DESIGN §6a.4) ----------
 const FENCE_RE = /[ \t]*<!-- managed:reconciler:begin\b[^>]*-->[\s\S]*?<!-- managed:reconciler:end -->\n?/;
-const INPUTS_RE = /<!-- managed:reconciler:begin\b[^>]*\binputs=([0-9a-f]+)/;
 
-function existingInputs(text) { const m = text.match(INPUTS_RE); return m ? m[1] : null; }
+const renderRule = (r) => `- ${r.rule}${r.source ? ` [[${r.source}]]` : ''}`;
 
-function renderFence(rules, inputsHash) {
-  let body = `<!-- managed:reconciler:begin schema=1 inputs=${inputsHash} -->\n`
+// render the managed fence from the two computed layers (durable = graduated/held, emerging = volatile).
+function renderFence(durable, emerging, gateSig) {
+  let body = `<!-- managed:reconciler:begin schema=2 inputs=${gateSig} -->\n`
     + `## Rules (projected from memory — do not edit; edit the source node)\n`;
-  body += rules.length
-    ? rules.map((r) => `- ${r.rule}${r.source ? ` [[${r.source}]]` : ''}`).join('\n') + '\n'
-    : `_(no rules currently meet the always-load bar — see retrieval-gated memory)_\n`;
+  if (!durable.length && !emerging.length) {
+    body += `_(no rules currently meet the always-load bar — see retrieval-gated memory)_\n`;
+  } else {
+    if (durable.length) {
+      body += `### Durable (auto-graduated — survived ${GRADUATE_AFTER}+ reconciles; held until superseded)\n`
+        + durable.map(renderRule).join('\n') + '\n';
+    }
+    if (emerging.length) {
+      body += `### Emerging (volatile — promotes to Durable after ${GRADUATE_AFTER} consecutive reconciles)\n`
+        + emerging.map(renderRule).join('\n') + '\n';
+    }
+  }
   body += `<!-- managed:reconciler:end -->\n`;
   return body;
 }
@@ -90,21 +122,40 @@ function spliceFence(text, fence) {
 // strip the managed fence from a file's text -> the hand-authored skeleton only (for dedup context).
 function skeletonOf(text) { return text.replace(FENCE_RE, '').trim(); }
 
+// ---------- projection state (streaks / graduated / last-emerging / gate-sig, per scope) ----------
+// The home for the durable lifecycle; the CLAUDE.md fence is a pure render of it. Shape:
+//   { "<scope>": { streaks: { "<sourceId>": <n> }, graduated: { "<sourceId>": { rule, source } },
+//                  emerging: [{ rule, source }], gateSig: "<sha8>" } }
+async function loadProjState() { try { return JSON.parse(await readFile(PROJ_STATE_FILE, 'utf8')); } catch { return {}; } }
+async function saveProjState(state) {
+  await mkdir(dirname(PROJ_STATE_FILE), { recursive: true });
+  await writeFile(PROJ_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+}
+const scopeState = (state, scope) => (state[scope] ||= { streaks: {}, graduated: {}, emerging: [], gateSig: '' });
+
 // ---------- the adversarial gate (judge, hard tier) ----------
-function gatePrompt(scope, candidates, skeleton) {
+// `sticky` = last run's emerging picks. Fed back so the gate keeps them unless there is a clear reason
+// to change (hysteresis): this is what turns the borderline coin-flip into a stable set run-to-run.
+function gatePrompt(scope, candidates, skeleton, sticky) {
   const cand = candidates.map((n) =>
     `[${n.id}] (centrality ${n.frontmatter.centrality}) ${n.frontmatter.title}\n  ${truncate(n.prose.replace(/\s+/g, ' '), PROSE_CHARS)}`
   ).join('\n\n');
+  const prior = (sticky || []).filter((r) => r && r.rule).map((r) => `- ${r.rule}${r.source ? ` [[${r.source}]]` : ''}`).join('\n');
   return `You curate the ALWAYS-LOADED behavioral rules for the "${scope}" scope's CLAUDE.md — the few \
 operating rules worth putting in front of the model in EVERY session (not retrieval-gated). Below are \
-candidate behavioral memory nodes, and the rules ALREADY hand-written in the always-loaded skeleton.
+candidate behavioral memory nodes, the rules ALREADY hand-written in the always-loaded skeleton, and the \
+set you selected on the PREVIOUS run.
 
 Pick ONLY the candidates that genuinely deserve always-loading, applying an adversarial lens:
+- STABILITY FIRST: keep each previously-selected rule whose candidate is still present, UNLESS there is a
+  clear reason to drop it (it is now covered by the skeleton, became transient, or a better candidate
+  supersedes it). Add or drop only on a clear basis — do not churn the set for cosmetic rewording.
 - DROP anything already covered by the skeleton (do not restate existing doctrine — that is bloat).
 - DROP transient / build-in-progress scaffolding ("we are currently on phase X") — keep only DURABLE rules
   that will still matter after the current work ships.
 - DROP vague platitudes; keep crisp, actionable operating rules.
-- Rephrase each survivor as ONE tight imperative line (≤ ~20 words). Keep its source node id.
+- Rephrase each survivor as ONE tight imperative line (≤ ~20 words). Keep its source node id; reuse the
+  previous wording verbatim when the rule is unchanged (stable diffs).
 - Hard cap ${CAP}. Prefer FEW. Returning an EMPTY array is a correct, common outcome.
 
 Reply ONLY a JSON array (possibly empty): [{ "rule": "<imperative one-liner>", "source": "<candidate node id>" }]
@@ -114,7 +165,12 @@ ALREADY-LOADED SKELETON (do not duplicate these):
 ${skeleton || '(none)'}
 """
 
-CANDIDATES:
+PREVIOUSLY SELECTED (keep unless clearly wrong):
+"""
+${prior || '(none — first run)'}
+"""
+
+CANDIDATES (eligible for selection; graduated rules are excluded and must not be re-listed):
 ${cand}`;
 }
 
@@ -134,7 +190,9 @@ async function commitFile(file) {
     await execFileP('git', ['-C', root, 'commit', '-m', `reconcile: project memory -> ${rel}`, '--quiet', '--', rel]);
     return 'committed';
   } catch (e) {
-    if (/nothing to commit/i.test(e.stderr || e.stdout || '')) return 'nochange';
+    // pathspec-scoped commit with no diff for `rel`: "nothing to commit" (clean tree) OR "no changes
+    // added to commit" (other files unstaged) — both mean this file is unchanged, not a real failure.
+    if (/nothing to commit|no changes added to commit/i.test(e.stderr || e.stdout || '')) return 'nochange';
     throw e;
   }
 }
@@ -143,10 +201,12 @@ async function commitFile(file) {
 // project(pool, { dryRun }) -> audit array. Called by reconcile.mjs after PHASE-1 node commit.
 export async function project(pool, { dryRun = false } = {}) {
   const globalSkeleton = await readFile(GLOBAL_SKELETON, 'utf8').catch(() => '');
+  const state = await loadProjState();
 
-  // scopes to consider: any with behavioral candidates, plus any KNOWN scope whose CLAUDE.md already
-  // carries a fence (so a now-empty scope's stale fence gets cleared).
+  // scopes to consider: any with behavioral candidates, any KNOWN scope whose CLAUDE.md already carries
+  // a fence (clear a now-empty one), plus any scope with existing state (so demotion/cleanup still runs).
   const scopes = new Set(pool.filter(isBehavioral).map((n) => n.frontmatter.scope));
+  for (const s of Object.keys(state)) scopes.add(s);
   for (const s of KNOWN_SCOPES) {
     const t = await readFile(targetFor(s), 'utf8').catch(() => null);
     if (t && FENCE_RE.test(t)) scopes.add(s);
@@ -156,54 +216,106 @@ export async function project(pool, { dryRun = false } = {}) {
   for (const scope of [...scopes].sort()) {
     const file = targetFor(scope);
     const existing = await readFile(file, 'utf8').catch(() => '');
+    const sc = scopeState(state, scope);
 
     // candidates: behavioral, this scope, above the centrality floor, strongest first.
     const candidates = pool
       .filter((n) => isBehavioral(n) && n.frontmatter.scope === scope && (n.frontmatter.centrality || 0) >= CENTRALITY_FLOOR)
       .sort((a, b) => (b.frontmatter.centrality || 0) - (a.frontmatter.centrality || 0));
+    const candById = new Map(candidates.map((n) => [n.id, n]));
+    const centOf = (id) => (candById.get(id)?.frontmatter.centrality || 0);
 
-    // dedup context = global skeleton (always loads) + this scope's own skeleton (if not global).
-    const skeleton = [scope === 'global' ? '' : skeletonOf(globalSkeleton), skeletonOf(existing)]
+    // --- DEMOTION: a durable rule whose source node no longer qualifies (superseded / below floor /
+    //     gone) drops out of the durable layer. Deterministic, tied to node state — never an LLM guess.
+    const demoted = [];
+    for (const id of Object.keys(sc.graduated)) {
+      if (!candById.has(id)) { demoted.push(id); delete sc.graduated[id]; delete sc.streaks[id]; }
+    }
+    const graduatedIds = new Set(Object.keys(sc.graduated));
+
+    // the gate only ever sees NOT-yet-graduated candidates — durable rules are held, not re-judged.
+    const gateCandidates = candidates.filter((n) => !graduatedIds.has(n.id));
+
+    // dedup context = global skeleton (always loads) + this scope's skeleton (if not global) + the
+    // durable rules (already always-loaded) — so the gate never re-proposes a graduated rule.
+    const durableText = Object.values(sc.graduated).map((r) => `- ${r.rule}`).join('\n');
+    const skeleton = [scope === 'global' ? '' : skeletonOf(globalSkeleton), skeletonOf(existing), durableText]
       .filter(Boolean).join('\n\n');
 
-    // damping signature: eligible nodes (id+contenthash+centrality) + the skeleton we dedup against.
-    const sig = sha8(JSON.stringify([
-      candidates.map((n) => [n.id, contentHash(n.prose), n.frontmatter.centrality]),
+    // --- GATE (sticky), skipped when its inputs are unchanged: reuse last emerging set, no judge call.
+    const gateSig = sha8(JSON.stringify([
+      gateCandidates.map((n) => [n.id, contentHash(n.prose), n.frontmatter.centrality]),
       sha8(skeleton),
+      (sc.emerging || []).map((r) => [r.rule, r.source]),
     ]));
-    if (existingInputs(existing) === sig) { audit.push({ scope, file, skipped: 'unchanged' }); continue; }
-
-    // nothing to project AND no fence to clear -> don't create an empty file.
-    if (!candidates.length && !FENCE_RE.test(existing)) { audit.push({ scope, file, skipped: 'no-candidates' }); continue; }
-
-    // the gate.
-    let rules = [];
-    if (candidates.length) {
+    let emerging, gated;
+    if (gateCandidates.length && gateSig !== sc.gateSig) {
       try {
-        const got = await judge(gatePrompt(scope, candidates, skeleton), { tier: 'hard', json: true });
-        if (Array.isArray(got)) rules = got;
+        const got = await judge(gatePrompt(scope, gateCandidates, skeleton, sc.emerging), { tier: 'hard', json: true });
+        emerging = Array.isArray(got) ? got : [];
+        gated = true;
       } catch (e) { audit.push({ scope, file, error: e.message }); continue; }
+    } else {
+      emerging = sc.emerging || [];   // reuse — stickiness guarantees the gate would re-select it
+      gated = false;
+    }
+    sc.gateSig = gateSig;
+
+    // validate + resolve source against the gate candidates; order by centrality; backlink known ids only.
+    emerging = emerging
+      .filter((r) => r && typeof r.rule === 'string' && r.rule.trim())
+      .map((r) => ({ rule: r.rule.trim(), source: gateCandidates.some((n) => n.id === r.source) ? r.source : null }))
+      .sort((a, b) => centOf(b.source) - centOf(a.source));
+
+    // --- STREAK: a survival = the rule is still selected (or reused while gate inputs hold). Consecutive.
+    const keptIds = new Set(emerging.map((r) => r.source).filter(Boolean));
+    for (const id of keptIds) sc.streaks[id] = (sc.streaks[id] || 0) + 1;
+    for (const id of Object.keys(sc.streaks)) if (!keptIds.has(id)) delete sc.streaks[id];
+
+    // --- GRADUATION: survived GRADUATE_AFTER consecutive runs -> move to the durable layer (leaves emerging).
+    const graduated = [];
+    for (const r of emerging) {
+      if (r.source && (sc.streaks[r.source] || 0) >= GRADUATE_AFTER) {
+        sc.graduated[r.source] = { rule: r.rule, source: r.source };
+        delete sc.streaks[r.source];
+        graduated.push(r.source);
+      }
+    }
+    emerging = emerging.filter((r) => !graduated.includes(r.source));
+    sc.emerging = emerging;
+
+    // --- CAP (durable + emerging ≤ CAP); durable earned its place first, emerging fills the remainder.
+    const durable = Object.values(sc.graduated).sort((a, b) => centOf(b.source) - centOf(a.source));
+    const durableShown = durable.slice(0, CAP);
+    const emergingShown = emerging.slice(0, Math.max(0, CAP - durableShown.length));
+    const dropped = (durable.length - durableShown.length) + (emerging.length - emergingShown.length);
+
+    // nothing to show AND no fence to clear -> don't create an empty file; drop any vestigial state.
+    if (!durableShown.length && !emergingShown.length && !FENCE_RE.test(existing)) {
+      if (!Object.keys(sc.streaks).length) delete state[scope];
+      audit.push({ scope, file, skipped: 'no-candidates', graduated, demoted });
+      continue;
     }
 
-    // validate + cap. order survivors by candidate centrality; keep backlink only for known ids.
-    const cByCent = new Map(candidates.map((n) => [n.id, n.frontmatter.centrality || 0]));
-    rules = rules
-      .filter((r) => r && typeof r.rule === 'string' && r.rule.trim())
-      .map((r) => ({ rule: r.rule.trim(), source: cByCent.has(r.source) ? r.source : null }))
-      .sort((a, b) => (cByCent.get(b.source) || 0) - (cByCent.get(a.source) || 0));
-    const dropped = Math.max(0, rules.length - CAP);
-    rules = rules.slice(0, CAP);
-
-    const fence = renderFence(rules, sig);
+    const fence = renderFence(durableShown, emergingShown, gateSig);
     const next = spliceFence(existing, fence);
 
-    if (dryRun) { audit.push({ scope, file, rules, dropped, preview: fence, wrote: false }); continue; }
+    if (dryRun) {
+      audit.push({ scope, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, preview: fence, wrote: false });
+      continue;
+    }
 
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, next, 'utf8');
-    const commit = await commitFile(file);
-    audit.push({ scope, file, rules, dropped, wrote: true, commit });
+    let commit = 'nochange';
+    if (next !== existing) {
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, next, 'utf8');
+      commit = await commitFile(file);
+    }
+    audit.push({ scope, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, wrote: next !== existing, commit });
   }
+
+  // persist + commit projection state (no-op commit if unchanged, e.g. a fully-settled scope).
+  if (!dryRun) { await saveProjState(state); await commitFile(PROJ_STATE_FILE); }
   return audit;
 }
 
@@ -211,12 +323,16 @@ export async function project(pool, { dryRun = false } = {}) {
 export function printProjection(audit, dryRun) {
   console.log(`\n=== CLAUDE.md projection ${dryRun ? '(dry-run)' : ''} ===`);
   if (!audit.length) { console.log('  (no scopes considered)'); return; }
+  const lifecycle = (a) => [a.graduated?.length ? `+${a.graduated.length} graduated` : '',
+    a.demoted?.length ? `-${a.demoted.length} demoted` : ''].filter(Boolean).join(', ');
   for (const a of audit) {
-    if (a.skipped) { console.log(`  · ${a.scope}: skipped (${a.skipped})`); continue; }
+    if (a.skipped) { const lc = lifecycle(a); console.log(`  · ${a.scope}: skipped (${a.skipped})${lc ? ` [${lc}]` : ''}`); continue; }
     if (a.error) { console.log(`  ✗ ${a.scope}: gate failed — ${a.error}`); continue; }
     const where = a.commit ? `[${a.commit}]` : (dryRun ? '[preview]' : '');
-    console.log(`  → ${a.scope}: ${a.rules.length} rule(s)${a.dropped ? ` (+${a.dropped} over cap, dropped)` : ''} ${where}  ${a.file}`);
-    for (const r of a.rules) console.log(`      - ${r.rule}${r.source ? `  [[${r.source}]]` : ''}`);
+    const tags = [a.gated ? 'gated' : 'reused', lifecycle(a), a.dropped ? `${a.dropped} over cap` : ''].filter(Boolean).join(', ');
+    console.log(`  → ${a.scope}: ${a.durable.length} durable / ${a.emerging.length} emerging (${tags}) ${where}  ${a.file}`);
+    for (const r of a.durable) console.log(`      ★ ${r.rule}${r.source ? `  [[${r.source}]]` : ''}`);
+    for (const r of a.emerging) console.log(`      · ${r.rule}${r.source ? `  [[${r.source}]]` : ''}`);
     if (dryRun && a.preview) console.log(a.preview.split('\n').map((l) => '      | ' + l).join('\n'));
   }
 }
