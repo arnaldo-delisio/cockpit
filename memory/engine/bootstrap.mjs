@@ -21,7 +21,7 @@ import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));
-const MEMORY_ROOT = resolve(ENGINE_DIR, '..');   // memory/
+export const MEMORY_ROOT = resolve(ENGINE_DIR, '..');   // memory/ — also imported by capture.mjs
 const REPO_ROOT = resolve(MEMORY_ROOT, '..');    // ~/.cockpit — for friendly logging only
 
 const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
@@ -88,7 +88,7 @@ Reconciler-generated master index: high-centrality god-nodes grouped by cluster,
 _Empty — append-only bootstrap mode until ≥1 centroid node per cluster exists (DESIGN §6a.3)._
 `;
 
-async function ensureScope(scope) {
+export async function ensureScope(scope) {
   for (const d of SCOPE_DIRS) await ensureDir(resolve(MEMORY_ROOT, 'scopes', scope, d));
   // global's identity IS soul.md (DESIGN §3); other live scopes get a generic identity stub.
   if (scope === 'global') {
@@ -111,4 +111,8 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error('bootstrap failed:', e); process.exit(1); });
+// Run only when invoked directly (so capture.mjs can import ensureScope without running this).
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : '';
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  main().catch((e) => { console.error('bootstrap failed:', e); process.exit(1); });
+}

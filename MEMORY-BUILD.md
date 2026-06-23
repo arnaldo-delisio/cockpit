@@ -56,8 +56,8 @@ bridge wired. This is **execution, not design**.
 |-------|------|--------|
 | 0 | Re-orient + create this tracker | ✅ done |
 | 1 | Bootstrap the tree (MEM-13 / §6a.3) | ✅ done |
-| 2 | Capture hooks (MEM-16/22 / §9) | ⏳ next |
-| 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ☐ |
+| 2 | Capture hooks (MEM-16/22 / §9) | ✅ done |
+| 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ⏳ next |
 | 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ☐ |
 | 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | ☐ |
 
@@ -76,15 +76,25 @@ bridge wired. This is **execution, not design**.
 - **Acceptance MET:** re-run = no-op ✓; tree matches §6a.3 ✓; `/watch` `sources/` dirs preserved ✓;
   clone-clean (paths relative to script) ✓; data gitignored from public history (`check-ignore` ✓).
 
-### Phase 2 — Capture hooks  (MEM-16/22 / §9)  [mechanical, dumb capture]
-- [ ] 2.1 Session-boundary capture → append near-raw, judgment-free to scope `staging/`; scope
-      stamped mechanically from session context.
-- [ ] 2.2 Salience markers (MEM-22): T1 sentinels `#good`/`#bad` (regex on user text); T2 inferred
-      (errors structural via `is_error`/`PostToolUseFailure`; keep/correction/decision regex). Not gates.
-- [ ] 2.3 Fire on `Stop` + `PreCompact` + `SessionEnd` (bug #6428: skips `/clear` — not sole trigger).
-- [ ] 2.4 Note: unblocks writer-cutover (checklist 1b/c) — cut over in Phase 5, not here.
-- **Acceptance:** a session's turns land in staging with correct scope + salience flags; zero judgment
-  at capture; idempotent; no canonical writes.
+### Phase 2 — Capture hooks  (MEM-16/22 / §9)  [mechanical, dumb capture]  ✅ DONE 2026-06-23 → `memory/engine/capture.mjs`
+- [x] 2.1 Near-raw, judgment-free append to scope `staging/<date>__<session>.md`; scope stamped
+      mechanically via `scopeFromCwd` (folder map: `~/projects/<x>`→`<x>`; `~/.cockpit`→`cockpit`;
+      fallback `global`; `COCKPIT_SCOPE` manual override). NO model call (v1 skips the optional Haiku
+      summary — raw transcript path stored as provenance; huge tool outputs not duplicated).
+- [x] 2.2 Salience markers (MEM-22): T1 `#good`/`#bad` + T2 keep/correction/decision regex (user text)
+      + `error` structural (`tool_result.is_error`). Tagged inline; markers focus, never gate.
+- [x] 2.3 Hooks `Stop` + `PreCompact` + `SessionEnd` registered in `~/.claude/settings.json` (GLOBAL —
+      user chose global-now). Incremental per-session cursor (`staging/.cursors/`) so per-turn `Stop`
+      only appends new entries. **Fail-safe:** all errors swallowed → `global/staging/.capture-errors.log`,
+      exit 0 always — never disrupts the session.
+- [x] 2.4 Homeless live scopes: created `~/projects/{content,job-search}` + CLAUDE.md scope pointer
+      (MEM-13c) so the folder map reaches them.
+- **Acceptance MET:** tested on this session's real transcript — 1710 entries captured, correct scope,
+  salience tags present, **idempotent** (re-run appended nothing), exit 0. Cutover (1b/c) noted for Phase 5.
+- **Known limits (acceptable, best-effort per MEM-22):** sentinel regex false-fires when user text
+  *discusses* `#good`/`#bad` (rare in normal sessions; reconciler judges in context); per-turn `Stop`
+  re-reads the full transcript (O(n)/turn — fine at current sizes; byte-offset cursor is a later optim).
+- **Lives outside the repo (→ `bootstrap.sh`):** `~/.claude/settings.json` hooks + `~/projects/{content,job-search}/`.
 
 ### Phase 3 — Reconciler + retrieval  (MEM-8/9/11/12/24 / §5/§7/§10)  [RIGOROUS — the heart]
 - [ ] 3.1 Node writer: staging/logs/sources → canonical nodes per §6a.1. Field-ownership split
@@ -140,8 +150,9 @@ bridge wired. This is **execution, not design**.
 
 ## Current position
 
-**Phases 0–1 done.** Tree bootstrapped + data walled from public git (OSS-1). **Next: Phase 2 —
-capture hooks** (MEM-16/22 / §9): `Stop`/`PreCompact`/`SessionEnd` → append near-raw, judgment-free
-to scope `staging/`; mechanical scope-stamp + salience markers. Open Phase-2 grey areas to settle on
-the nod: the `cwd → scope` map + the homeless live scopes (`content`/`job-search` have no
-`~/projects/` dir → need cwd-map + env/flag override).
+**Phases 0–2 done.** Substrate bootstrapped (data walled from public git, OSS-1) + capture hooks live
+globally (fail-safe, idempotent, salience-tagging). **Next: Phase 3 — the reconciler** (the heart,
+RIGOROUS): staging/logs/sources → canonical nodes (§6a.1) + the MEM-24 retrieval stack, two-phase
+commit, instability guard. This is where the first deps land (`package.json` + `@huggingface/transformers`),
+the private data repo + reconciler commit-target get stood up (OSS-1 deferred item), and `judge()` →
+`hermes proxy` (MEM-25) is wired. Likely its own session.
