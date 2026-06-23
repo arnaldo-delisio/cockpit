@@ -269,6 +269,7 @@ No rivalry — roles assigned (MEM-15):
 - `schema_version` **migration functions** (keyed `from→to`, in-repo, tested, lazy on read).
 - Reconciler **audit-diff + tombstones** (observability).
 - Dreaming **token/node budget + pending-review queue**.
+- **Projection gate determinism** (MEM-20 / §6a.4): the gate is a `judge('hard')` LLM call → non-deterministic. Identical inputs can yield different rule *sets* run-to-run (observed a 3→2 flip on a borderline node that partially overlaps the hand skeleton's doctrine), and the `inputs=<sha8>` damping then *freezes* whichever set it happened to land on. Mitigations to weigh: quorum the gate (best-of-N / majority), bias toward the last-committed set (stickiness), or keep foundational doctrine in the hand skeleton so only clearly-emergent rules reach the gate (the Phase-5-A workaround). Low urgency at current pool size.
 - Session **heartbeat** for dead-session detection.
 - Staging **growth cap** (block + warn, never silent drop).
 - Shared **Kanban board write-locking**.
