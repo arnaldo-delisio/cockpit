@@ -14,3 +14,9 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 ## Write to the home, not here
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
+
+<!-- managed:reconciler:begin schema=1 inputs=5408b211 -->
+## Rules (projected from memory — do not edit; edit the source node)
+- Inspect canonical docs and live wiring before changing shell, skills, memory, or bridge infrastructure. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
+- Apply locked decisions by intent, not literal overfit; avoid bulky eager loads, not thin shell pointers. [[build-2-import-ban-targets-bulky-deep-dives-not-thin-shell-r]]
+<!-- managed:reconciler:end -->
