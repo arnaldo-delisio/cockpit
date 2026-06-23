@@ -101,9 +101,10 @@ bridge wired. This is **execution, not design**.
   - [x] **Private data repo stood up (Option D, 2026-06-23):** `memory-engine/` + `memory-engine/DESIGN.md` → cockpit
         top level (public); `memory/` = standalone private git repo (data only, gitignored wholesale).
         This **is** the reconciler's two-phase-commit target. bootstrap+capture verified from new paths.
-  - [~] **`hermes proxy` verified — needs login.** Proxy fronts `nous` (Nous Portal = planned GPT-5.5,
-        TOOL-3) + `xai`; both **not logged in**. BLOCKS `judge()`. User action: run `hermes portal`
-        (interactive OAuth — can't be headless), confirm GPT-5.5 offered, then `hermes proxy status` = ready.
+  - [x] **Model access settled (MEM-25 revised + Sonnet research, 2026-06-23).** `judge(prompt,tier)` shells
+        to `hermes -z "<prompt>" --ignore-rules -t ''` (clean stdout, verified). Tiered in-plan Codex per
+        TOOL-3: `hard`→`gpt-5.5`, `bulk`→`gpt-5.4-mini`. Gemma throttle-fallback (MR-1). **Nous/proxy +
+        `hermes portal` login DROPPED** — proxy can't reach Codex; no login needed (blocker gone).
   - [ ] **v1 = single on-demand batch command first** (nightly timer later).
 - [ ] 3.1 Node writer: staging/logs/sources → canonical nodes per §6a.1. Field-ownership split
       (capture stamps scope/created/raw claim+citation; reconciler owns centrality/cluster/tags/
@@ -159,18 +160,22 @@ bridge wired. This is **execution, not design**.
   C (`memory/data/` subdir). Costlier in churn but gives a clean conventional data repo. `bootstrap.mjs`
   `MEMORY_ROOT` now = `resolve(REPO_ROOT,'memory')`; settings.json hook paths + cockpit `.gitignore`
   rewired; doc refs swept (log/ left as historical). Finalizes OSS-1's deferred data-repo + commit-target.
+- **2026-06-23 — `judge()` endpoint = `hermes -z`, tiered Codex (MEM-25 revised).** Dropped the Nous proxy
+  (can't reach Codex; redundant paid path). User caught that this is just TOOL-3's main/aux split applied to
+  the reconciler: `gpt-5.5` (hard) + `gpt-5.4-mini` (bulk), both in-plan Codex; Gemma throttle-fallback (MR-1).
+  Process lesson → new build-doctrine rule in `shells/CLAUDE.md` ("Ground in the decisions first"): read the
+  relevant DECISIONS/decisions before building (I'd proposed off-doctrine Gemini before reading TOOL-3/MR-1).
 
 ---
 
 ## Current position
 
-**Phases 0–2 done; Phase 3 setup underway.** Substrate bootstrapped + capture hooks live globally
-(fail-safe, idempotent, salience-tagging). Phase 3 setup: ✅ **private data repo stood up** (Option D —
-`memory-engine/`+spec public at cockpit top level; `memory/` = standalone private git repo = reconciler's
-commit target); ⏳ **`hermes proxy` verified but needs `hermes portal` login** (Nous Portal/GPT-5.5 not
-authenticated — BLOCKS `judge()`; user action).
+**Phases 0–2 done; Phase 3 setup DONE — building the reconciler.** Substrate bootstrapped + capture hooks
+live globally. Phase 3 setup both forks closed: ✅ **private data repo** (Option D — `memory-engine/`+spec
+public; `memory/` = standalone private git repo = commit target); ✅ **model access** (MEM-25 revised —
+`judge()` shells to `hermes -z`, tiered in-plan Codex gpt-5.5/gpt-5.4-mini per TOOL-3; no proxy, no login).
 
-**Next (the reconciler itself):** first deps land (`package.json` + `@huggingface/transformers` in
-`memory-engine/`); build `judge()` against the proxy once logged in; then the §5 writer + MEM-24 retrieval
-stack + two-phase commit + instability guard. Start with a single on-demand batch command (nightly
-timer later). The reconciler commits to the `memory/` data repo. Likely its own session.
+**Next (the reconciler itself):** ① `judge()` adapter (`hermes -z` wrapper, tier routing, JSON-parse+retry)
+— building now; ② first deps (`package.json` + `@huggingface/transformers` in `memory-engine/`); ③ §5 writer
+(staging→nodes) + MEM-24 retrieval + two-phase commit + instability guard. v1 = single on-demand batch
+command (nightly timer later). Reconciler commits to the `memory/` data repo.

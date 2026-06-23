@@ -17,6 +17,9 @@ points, it does not contain. Expands only as the layers it points to get built
 
 Applies to every build, not as an occasional audit.
 
+### Ground in the decisions first
+Before building in any area, read the relevant `DECISIONS.md` entries + their `decisions/<topic>.md` deep-dives (STATE carries the map). Build *on* locked decisions — never silently re-derive, contradict, or reopen one. If a fresh finding genuinely breaks a locked decision, supersede it in the ledger (keep the trail), don't quietly route around it. Cheap to check, expensive to skip: skipping it is how you propose an off-doctrine path the ledger already settled.
+
 ### Think before coding
 State load-bearing assumptions and surface real ambiguities before you build; if genuinely competing interpretations exist, flag them instead of silently picking one. Not a license to interrogate — when you have enough to act, act; reserve questions for forks that actually change the build.
 
