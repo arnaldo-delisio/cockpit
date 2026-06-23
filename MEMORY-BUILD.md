@@ -2,8 +2,9 @@
 
 **TRANSIENT.** This file exists only for the duration of the Memory-layer build. It is the
 cross-compaction **resume anchor**: any session resuming the build reads `STATE.md` +
-latest `log/YYYY-MM.md` + **this file**, and knows exactly where things stand. **Delete it at
-the end of the build** (final step of Phase 5); the permanent record lives in STATE/DECISIONS/log.
+latest `log/YYYY-MM.md` + **this file**, and knows exactly where things stand. **Delete it ONLY on the
+user's explicit say-so**, after an **internalization audit** confirms every fact here is permanently
+homed in STATE/DECISIONS/DESIGN/log (its content must outlive it — never auto-delete at "build end").
 
 It holds **status + build-local micro-decisions + resume pointer only** — it never restates the
 specs. The specs are the home (one-fact-one-home, DOC-1):
@@ -145,14 +146,37 @@ bridge wired. This is **execution, not design**.
   `reconcile.mjs` as PHASE 3 + the no-work path + dry-run preview. Cockpit `~/.cockpit/CLAUDE.md` got a
   thin hand-authored skeleton (Orient-before-building + DOC-1 pointer) above the fence.
 
-### Phase 5 — Cutover + salvage  (checklist 1b/c + 2; TOOL-6)
-- [ ] 5.1 Disable native Claude writer (`autoMemoryDirectory`/disable) — kills #63903 token tax.
-- [ ] 5.2 Bridge Hermes as a staging WRITER; cut over Hermes LAST.
-- [ ] 5.3 Salvage remainder (BUILD-3): Hermes memory subsystem + live CLAUDE.md merge chain.
-- [ ] 5.4 Clean-start (MEM-15): NO legacy migration; only keepers (`cockpit-working-rhythm`,
-      `live-work-focus`) carry forward.
-- [ ] 5.5 git checkpoint (checklist 5); update STATE (Memory: built); **delete this tracker.**
-- **Acceptance:** one capture path, old writers off, no token tax, single timeline both brains append to.
+### Phase 5 — Cutover + salvage  (checklist 1b/c + 2; TOOL-6)  [sequencing = option 1: Claude-side close-out, then ONE batched Hermes push]
+
+**A. Claude-side close-out (do first — quick wins, no Hermes):**
+- [ ] A1 **Migrate the 2 keepers into the new graph** — `cockpit-working-rhythm` (behavioral → projects to
+      CLAUDE.md) + `live-work-focus` (project knowledge), via staging → reconciler → nodes (MEM-15 keepers-
+      carry-forward). They are NOT yet in the new system (reconciler has only distilled live staging). **MUST
+      precede A3** — else disabling native injection loses always-loaded doctrine.
+- [ ] A2 Verify the keepers resurface (projection and/or retrieval) before native injection stops.
+- [ ] A3 **Disable the native Claude auto-memory writer.** GROUNDED 2026-06-23: there is **NO `autoMemory`
+      disable key in `~/.claude/settings.json`** (the feature runs at the Claude-Code default, not a local
+      setting); our capture hooks are already wired correctly. Verify the exact mechanism via the
+      **claude-code-guide agent** (do NOT guess a settings key). The keepers (`MEMORY.md` + the 2 files) live
+      at `~/.claude/projects/-home-arn--cockpit/memory/`, injected into every session today.
+- [ ] A4 Confirm clean-start (MEM-15): only the keepers carried; no other legacy folded.
+
+**B. Hermes integration push (ONE batch — memory side + identity side together):**
+- [ ] B1 Bridge Hermes as a staging WRITER (TOOL-6); cut over Hermes LAST. (Capture is Claude-only today.)
+- [ ] B2 Salvage remainder (BUILD-3): Hermes memory subsystem + VERIFY the live CLAUDE.md merge chain
+      (cwd→`/`, native to Claude Code now — likely a verify, not a build).
+- [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); fix stale
+      `~/.hermes/SOUL.md` + load wiring (`config.yaml` — SOUL.md **can't** `@`-import, per MEM-20 clarification).
+- [ ] B4 **Open design Q — decide in this push:** does MEM-20 projection extend to SOUL.md? (Dual-brain
+      always-load symmetry — Hermes's shell currently receives NO projected behavioral nodes.)
+
+**C. Tracker close-out — ONLY on the user's explicit say-so:**
+- [ ] C1 **Internalization audit:** confirm every fact in THIS file is permanently homed in STATE/DECISIONS/
+      DESIGN/log. Nothing is lost when it goes.
+- [ ] C2 git checkpoint; update STATE (Memory: built); **then** delete this tracker.
+
+- **Acceptance:** one capture path, old writers off, no token tax, single timeline both brains append to,
+  Hermes operator shell real, tracker content internalized.
 
 ---
 
@@ -187,6 +211,14 @@ bridge wired. This is **execution, not design**.
 
 ---
 
+- **2026-06-23 — Phase 5 sequencing = option 1; 5.1 coupling grounded.** Close out the Claude side first
+  (keeper migration + native-writer disable + clean-start), THEN one batched Hermes push — its MEMORY side
+  (staging-writer bridge) and IDENTITY side (`SOUL.md` shell + wiring) together, so Hermes internals load
+  once. Grounding found A3 is **coupled to A1**: NO `autoMemory` disable key in `settings.json` (native writer
+  at Claude-Code default), and the 2 keepers aren't in the new graph yet → migrate keepers FIRST, then disable,
+  else lose always-injected doctrine; verify the disable mechanism via claude-code-guide. The Phase-4 work also
+  left a **dual-brain projection-symmetry gap** (SOUL.md gets no MEM-20 projection) → decided in the Hermes
+  push (B4). Tracker deletion gated on user say-so + an internalization audit. **Continuing in a fresh session.**
 - **2026-06-23 — CLAUDE.md projection routing → loader-indirection + public/private split (Phase 4).**
   Reframed from the lock's "project → that project's CLAUDE.md" after a topology brainstorm with the user.
   Projection writes the scope's CANONICAL file in a reconciler-OWNED repo; foreign project/client repos
