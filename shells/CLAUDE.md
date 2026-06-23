@@ -52,3 +52,9 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
   structural (the VM), not prompt discipline.
 - `~/back-in-time/` is **archived**, not active — never treat as live.
 - Never delete a real client/venture repo.
+
+<!-- managed:reconciler:begin schema=1 inputs=73d591ec -->
+## Rules (projected from memory — do not edit; edit the source node)
+- When asked for judgment, recommend a path with reasons; do not just list options. [[advise-dont-just-list-options]]
+- Before canonicalizing major decisions, run adversarial review across failure, requirements, and systems lenses. [[verify-before-freezing-cross-family-adversarial-panel]]
+<!-- managed:reconciler:end -->
