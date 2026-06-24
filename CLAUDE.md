@@ -15,8 +15,13 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
 
-<!-- managed:reconciler:begin schema=1 inputs=ebf6db76 -->
+<!-- managed:reconciler:begin schema=2 inputs=96c9c5d5 -->
 ## Rules (projected from memory — do not edit; edit the source node)
-- Inspect canonical docs and live wiring before changing shell, skills, memory, or bridge infrastructure. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
-- Apply locked decisions by intent, not literal wording; avoid bulky eager loads, not thin shell pointers. [[build-2-import-ban-targets-bulky-deep-dives-not-thin-shell-r]]
+### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
+- Verify source and subagent claims before freezing them into memory, code, or decisions. [[cockpit-reviewer-workflow]]
+- Recommend a path and adversarially double-check important decisions before locking them in. [[global-working-rhythm-rules]]
+- Inspect live cockpit wiring before changing it; make the smallest reversible change and verify both brains when relevant. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
+- Dry-run first executions that could write, commit, or trigger side effects by import. [[first-executions-must-be-dry-run-safe]]
+- Confirm cleanup scope before deleting any workspace that may contain user-created work. [[do-not-delete-real-workspaces-just-because-an-agent-touched-]]
+- Apply prior decisions by preserving their intent, not overfitting to literal wording. [[build-2-import-ban-targets-bulky-deep-dives-not-thin-shell-r]]
 <!-- managed:reconciler:end -->
