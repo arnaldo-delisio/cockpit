@@ -187,13 +187,14 @@ bridge wired. This is **execution, not design**.
       Code now — likely a verify, not a build). Flag the native-memory disable as cut-last (don't execute).
 - [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); symlink stale
       `~/.hermes/SOUL.md` → it (loader follows symlinks; SOUL **can't** `@`-import). **BLOCKER (verified against
-      source, 2026-06-24):** `hermes -z … --ignore-rules` DOES load SOUL — the flag is honored only in the
-      TUI/gateway path, NOT `hermes_cli/oneshot.py` (default `skip_context_files=False` → `prompt_builder.py:1791
-      if not skip_soul:` loads it). So once SOUL is real, it injects operator identity slot #1 into EVERY
-      brain-neutral `judge()` call (breaks MEM-8/MEM-25). **Fix BEFORE symlinking:** give `judge.mjs` a dedicated
-      reconciler `HERMES_HOME` carrying config/auth but no `SOUL.md`. NOT `HERMES_HOME=/dev/null` (relocates the
-      whole home → loses Codex OAuth); NOT dropping `--ignore-rules` (never gated SOUL — no-op). Ground the
-      minimal HERMES_HOME set at B3. (Resolves the handoff's `--ignore-rules`-skips-SOUL claim: false for oneshot.)
+      source, 2026-06-24 — now RESOLVED + committed):** `hermes -z … --ignore-rules` DOES load SOUL — the flag is
+      honored only in the TUI/gateway path, NOT `hermes_cli/oneshot.py` (which bypasses cli.py entirely; default
+      `skip_context_files=False` → SOUL slot #1 + cwd context + memory all inject). **PREREQUISITE FIX — [x] DONE
+      + committed 2026-06-24** (see micro-decision below): `judge.mjs` self-provisions a dedicated reconciler
+      `HERMES_HOME` (`~/.cache/cockpit-reconciler`, its OWN git root, used as HERMES_HOME **and** cwd, with a
+      neutral SOUL) that isolates `judge()` from `~/.hermes`. So a real `~/.hermes/SOUL.md` **no longer leaks**
+      into `judge()`. **Remaining B3 work = just write `shells/SOUL.md` thin (hand-skeleton only; B4 adds the
+      projection fence) + symlink `~/.hermes/SOUL.md` → it.**
 - [ ] B4 **Extend MEM-20 projection to the global operator shell** (in-scope BUILD, not just a decision).
       Add `audience` to the node template (§6a.1) + mint it in the reconciler distill from the brain-stamp
       (Hermes-origin → `operator`, default `builder`; **any-Hermes-provenance → operator** on merged spans, GA3);
@@ -298,10 +299,32 @@ bridge wired. This is **execution, not design**.
   CoT-only corrections); (d) **`brain:` in staging frontmatter** (per-file; sessions are single-brain). The
   SOUL/`-z` BLOCKER was found here (see B3) — and it resolved a handoff contradiction: `--ignore-rules` does NOT
   skip SOUL in the oneshot path (TUI-only). Activation (config.yaml hook + TTY consent) is the next step.
+- **2026-06-24 — judge.mjs brain-neutrality fix: DONE + committed (clears the B3 blocker).** A read-only probe of
+  the *actual* assembled `hermes -z` system prompt (ran the real loaders, no inference, no writes) proved the
+  contamination is **threefold, not SOUL-only**, and **live right now**: (1) `~/.hermes/SOUL.md` as identity slot
+  #1, (2) the cwd→ `~/.cockpit/CLAUDE.md` (project-context block, fence and all), (3) the HERMES_HOME `memories/
+  USER.md` profile block. Root cause: `hermes -z` → `run_oneshot` **bypasses cli.py**, never reads
+  `HERMES_IGNORE_RULES`, and builds `AIAgent` with `skip_context_files=False`. **Fix:** `judge.mjs` now
+  **self-provisions a dedicated reconciler `HERMES_HOME`** = `~/.cache/cockpit-reconciler` (homedir-relative,
+  clone-clean), **made its OWN git root via `git init`** and used as **both `HERMES_HOME` and `cwd`**. One dir
+  kills all three leaks: SOUL absent-→-owned · memory absent (`memory_enabled:false`) · cwd is a neutral, empty,
+  git-rooted dir (CLAUDE/AGENTS/.cursorrules are cwd-only; the HERMES.md/.hermes.md ancestor-climb stops at the
+  git root). Provisioning is idempotent every process start: mkdir + `git init` + stripped `config.yaml`
+  (**no `hooks:` block** → the B1 `on_session_end` capture can never fire from a judge() call) + neutral `SOUL.md`
+  + `auth.json` symlink. **Neutral-SOUL design (the one deviation from "no SOUL.md", signed off):** absence is
+  **impossible** — Hermes's `ensure_hermes_home()` auto-scaffolds a default `SOUL.md`, and an *empty* one falls
+  back to `DEFAULT_AGENT_IDENTITY` ("You are Hermes Agent…", `system_prompt.py:160-162`). The identity slot is
+  unavoidable, so we **own** it with brain-neutral content ("the cockpit memory reconciler… owned by neither
+  brain… instruction-literal, JSON-only"). **Validated:** re-probe → SOUL neutral · project-context absent ·
+  memory absent; **real hard-tier distill** → well-formed JSON array, Codex answers (`auth.json` + minimal config
+  sufficient); staging checksum **identical** before/after → no capture subprocess fired. **Clone-clean by
+  construction** — no `bootstrap.sh` entry needed (better than symlinking the real config, which would drag in
+  the B1 hook); only external precondition is `~/.hermes/auth.json` (a Hermes-setup given). DECISIONS.md
+  untouched — rides into the **MEM-25 amendment** after B1–B4 validate. Files: `memory-engine/judge.mjs`.
 
 ## Current position
 
-**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) DONE + ACTIVATED — next is B2 (salvage + merge-chain verify), then B3 (SOUL shell, gated on the judge.mjs SOUL-free HERMES_HOME fix), then B4 (audience-axis projection to SOUL).**
+**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) DONE + ACTIVATED; judge.mjs brain-neutrality fix DONE + committed (B3 blocker CLEARED) — next is B2 (salvage + merge-chain verify), then B3 (write `shells/SOUL.md` thin + symlink `~/.hermes/SOUL.md` → it — now UNGATED), then B4 (audience-axis projection to SOUL).**
 Substrate bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine
 run end-to-end, the reconciler projects behavioral nodes into scope-routed CLAUDE.md, and the Claude-side
 cutover off native auto-memory is complete.
