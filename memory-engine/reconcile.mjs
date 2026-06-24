@@ -116,6 +116,19 @@ async function saveState(state) {
   await writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
 }
 
+// reflect cost-guard (STATE "dreaming" fork 2): a cheap per-scope fingerprint over the live nodes' ids +
+// `updated` stamps. A PURE --reflect pass (no new staging) whose fingerprint matches the last reflect is a
+// guaranteed no-op — same nodes in ⇒ same consolidation out — so its one judge('hard') consolidate call is
+// skipped (nightly runs cost ~nothing when nothing changed). Any on-write change bumps a touched node's
+// `updated`, shifting the fingerprint and forcing the next reflect to actually run. Stored in state.reflect.
+function scopeFingerprint(pool, scope) {
+  const sig = pool
+    .filter((n) => n.frontmatter.scope === scope && !n.frontmatter.superseded)
+    .map((n) => `${n.id}:${n.frontmatter.updated || ''}`)
+    .sort();
+  return sha8(JSON.stringify(sig));
+}
+
 // ============================================================ staging ingestion
 // capture writes turns as:  #### <role> · <ts>  [tag, tag]\n<text>\n\n
 function parseStaging(text) {
@@ -515,6 +528,7 @@ async function main() {
   try {
     const state = await loadState();
     state.consumed ||= {};
+    state.reflect ||= {};   // per-scope fingerprints for the reflect cost-guard (skip unchanged scopes)
 
     // ---- read all unconsumed staging, grouped by scope ----
     const workByScope = {};   // scope -> [ { scope, file, anchor, transcript, brain, turnIndex, digest, totalTurns } ]
@@ -546,7 +560,7 @@ async function main() {
     const cache = await new EmbeddingCache(CACHE_FILE).load();   // retrieval cache (kept warm post-commit)
     const takenIds = new Set(pool.map((n) => n.id));
     const bootstrapMode = pool.length < BOOTSTRAP_MAX_NODES;
-    const audit = { added: [], modified: [], superseded: [], held: [], autoApplied: [], unmentioned: [], scopes: {} };
+    const audit = { added: [], modified: [], superseded: [], held: [], autoApplied: [], unmentioned: [], reflectSkipped: [], scopes: {} };
 
     // ---- per scope: distill all work-units -> consolidate against existing -> apply ----
     for (const scope of [...scopeSet].sort()) {
@@ -570,6 +584,13 @@ async function main() {
       if (!proposals.length && !reflect) continue;                  // normal run, nothing new survived distill
       if (!proposals.length && existingInScope.length < 2) continue; // reflect: <2 existing -> no dup to fold
 
+      // reflect cost-guard: a pure-reflection scope (no new candidates) whose live nodes are unchanged since
+      // the last reflect is a guaranteed no-op — skip its consolidate judge() call (STATE dreaming fork 2).
+      if (reflect && !proposals.length && state.reflect[scope] === scopeFingerprint(pool, scope)) {
+        audit.reflectSkipped.push({ scope, existing: existingInScope.length });
+        continue;
+      }
+
       // consolidate (size-triggered grouping; one group = whole scope at our scale)
       for (const g of groupForConsolidation(proposals, existingInScope)) {
         if (!g.proposals.length && g.existing.length < 2) continue;
@@ -578,6 +599,9 @@ async function main() {
         catch (e) { console.error(`reconcile: consolidate failed for scope ${scope} (${e.message}); skipping group.`); continue; }
         await applyConsolidation(result, g.proposals, g.existing, scope, pool, takenIds, audit);
       }
+      // record the post-consolidation fingerprint so an unchanged scope skips the next reflect. Only on a
+      // reflect pass (an on-write run leaves it stale on purpose, forcing the next reflect to re-examine).
+      if (reflect) state.reflect[scope] = scopeFingerprint(pool, scope);
     }
 
     // ---- audit summary ----
@@ -656,7 +680,8 @@ function printAudit(a, dryRun, bootstrapMode) {
   console.log(`\n=== reconcile audit ${dryRun ? '(dry-run)' : ''} ===`);
   console.log(`mode: ${bootstrapMode ? 'bootstrap (append-only floor)' : 'steady'}`);
   for (const [s, c] of Object.entries(a.scopes)) console.log(`scope ${s}: ${c.distilled} distilled candidate(s) vs ${c.existing} existing node(s)`);
-  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  auto-applied(risky): ${a.autoApplied.length}  escalated: ${a.held.length}  kept-untouched: ${a.unmentioned.length}`);
+  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  auto-applied(risky): ${a.autoApplied.length}  escalated: ${a.held.length}  kept-untouched: ${a.unmentioned.length}  reflect-skipped(unchanged): ${a.reflectSkipped.length}`);
+  for (const x of a.reflectSkipped) console.log(`  ⏭ reflect-skip ${x.scope} — ${x.existing} node(s) unchanged since last reflect (no judge call)`);
   for (const x of a.added) console.log(`  + [${x.type}/${x.claim}] ${x.id} — ${x.title}`);
   for (const x of a.modified) console.log(`  ~ ${x.id} — ${x.title}`);
   for (const x of a.superseded) console.log(`  » ${x.id} — ${x.title}`);
@@ -671,7 +696,8 @@ function auditMarkdown(a) {
     + sec('Superseded', a.superseded, (x) => `- [[${x.id}]] — ${x.title}`)
     + sec('Auto-applied risky changes (MEM-28: not-always-load or LLM-approved)', a.autoApplied, (x) => `- ${x.kind} [[${x.id}]] — ${x.reasons.join(', ')} [${x.via}]`)
     + sec('Escalated to pending-review (always-load contradiction / evidence-loss)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}${x.reason ? ` — ${x.reason}` : ''}`)
-    + sec('Kept untouched (not mentioned by consolidator)', a.unmentioned, (x) => `- [[${x.id}]] (${x.scope})`);
+    + sec('Kept untouched (not mentioned by consolidator)', a.unmentioned, (x) => `- [[${x.id}]] (${x.scope})`)
+    + sec('Reflect-skipped (unchanged since last reflect — no judge call)', a.reflectSkipped, (x) => `- ${x.scope} (${x.existing} node(s))`);
 }
 
 // Run ONLY when invoked directly — importing this module must never trigger a real reconcile run.
