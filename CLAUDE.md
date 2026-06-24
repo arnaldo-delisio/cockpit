@@ -17,7 +17,7 @@ DESIGN = specs · log/ = chronology. Record in the home first, then add a pointe
 
 <!-- managed:reconciler:begin schema=2 inputs=941bfb8e -->
 ## Rules (projected from memory — do not edit; edit the source node)
-### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
+### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Verify source and subagent claims before freezing them into memory, code, or decisions. [[cockpit-reviewer-workflow]]
 - Recommend a path and adversarially double-check important decisions before locking them in. [[global-working-rhythm-rules]]
 - Inspect live cockpit wiring before changing it; make the smallest reversible change and verify both brains when relevant. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
