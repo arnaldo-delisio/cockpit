@@ -9,7 +9,7 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 2. Newest `log/YYYY-MM.md` — what just happened (entries newest-first).
 3. `DECISIONS.md` (+ `decisions/<topic>.md`) — locked decisions and why; build *on* them.
 4. Specs → `memory-engine/DESIGN.md`.
-5. **A mid-flight build's transient tracker is the resume anchor** — currently `MEMORY-BUILD.md`.
+5. **A mid-flight build's transient tracker, if one exists, is the resume anchor** — none currently (the Memory build's `MEMORY-BUILD.md` was deleted at close-out 2026-06-24; its content is homed in STATE/DECISIONS/DESIGN/log).
 
 ## Write to the home, not here
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
