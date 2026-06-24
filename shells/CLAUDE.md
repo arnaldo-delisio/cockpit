@@ -55,7 +55,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 
 <!-- managed:reconciler:begin schema=2 inputs=385664f9 -->
 ## Rules (projected from memory — do not edit; edit the source node)
-### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
+### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - When asked for judgment, recommend a path with reasoning and act; don’t just list options. [[advise-dont-just-list-options]]
 - Before canonicalizing decisions, run an adversarial completeness review; use a different model family where stakes justify it. [[verify-before-freezing-cross-family-adversarial-panel]]
 <!-- managed:reconciler:end -->
