@@ -66,25 +66,38 @@ const GRADUATE_AFTER = 3;       // consecutive reconciles a rule must survive th
 
 const HOME = homedir();
 const COCKPIT_ROOT = resolve(HOME, '.cockpit');
-const GLOBAL_SKELETON = resolve(COCKPIT_ROOT, 'shells', 'CLAUDE.md'); // canonical global shell (~/CLAUDE.md just imports it)
+const GLOBAL_SKELETON = resolve(COCKPIT_ROOT, 'shells', 'CLAUDE.md'); // canonical global builder shell (~/CLAUDE.md just imports it)
+const GLOBAL_SOUL = resolve(COCKPIT_ROOT, 'shells', 'SOUL.md');       // canonical global operator shell (~/.hermes/SOUL.md symlinks it)
 const KNOWN_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
+// KNOWN routes to sweep for a now-empty fence to clear: every builder scope + the global operator shell.
+const KNOWN_ROUTES = [...KNOWN_SCOPES.map((s) => [s, 'builder']), ['global', 'operator']];
 const PROJ_STATE_FILE = resolve(MEMORY_ROOT, '.reconciler', 'projection-state.json'); // committed (sibling of state.json)
 
 const sha8 = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
 const truncate = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
 const isBehavioral = (n) => ['identity', 'feedback'].includes(n.frontmatter?.type) && !n.frontmatter?.superseded;
 
-// scope → CANONICAL projection target. The reconciler writes ONLY its own two repos; project/client
-// load-points (~/projects/<x>/CLAUDE.md) are thin hand-written loaders that @-import these canonicals,
-// so foreign repos stay pristine. System scopes project public (cockpit repo); data scopes project
-// private (memory repo, riding the same commit as the nodes they derive from).
-//   global  → shells/CLAUDE.md      — public cockpit repo; ~/CLAUDE.md (loader) @-imports it.
-//   cockpit → ~/.cockpit/CLAUDE.md  — public cockpit repo; load-point already in-repo, no loader.
-//   <x>     → memory/scopes/<x>/CLAUDE.md — PRIVATE memory repo; ~/projects/<x>/CLAUDE.md loader imports it.
-function targetFor(scope) {
-  if (scope === 'global') return GLOBAL_SKELETON;                  // shells/CLAUDE.md (the canonical root shell)
+// projection-state key for a route: builder keeps the BARE scope key (back-compat — existing
+// projection-state.json survives B4); operator routes get a `<scope>::operator` suffix.
+const routeKey = (scope, audience) => (audience === 'operator' ? `${scope}::operator` : scope);
+const parseRouteKey = (key) => (key.endsWith('::operator') ? [key.slice(0, -'::operator'.length), 'operator'] : [key, 'builder']);
+
+// (scope × audience) → CANONICAL projection target (B4 audience axis). The reconciler writes ONLY its
+// own two repos; project/client load-points (~/projects/<x>/CLAUDE.md) are thin hand-written loaders
+// that @-import these canonicals, so foreign repos stay pristine. System scopes project public (cockpit
+// repo); data scopes project private (memory repo, riding the same commit as the nodes they derive from).
+//   builder/global   → shells/CLAUDE.md      — public cockpit repo; ~/CLAUDE.md (loader) @-imports it.
+//   builder/cockpit  → ~/.cockpit/CLAUDE.md  — public cockpit repo; load-point already in-repo, no loader.
+//   builder/<x>      → memory/scopes/<x>/CLAUDE.md — PRIVATE memory repo; ~/projects/<x>/CLAUDE.md loader imports it.
+//   operator/global  → shells/SOUL.md        — public cockpit repo; ~/.hermes/SOUL.md symlinks it.
+//   operator/<x>     → null (NO route) — audience routing is scope-naive (GA2); non-global operator nodes
+//                      don't project until a scope-aware route exists, and must NOT fall back to the
+//                      builder shell (that would leak operator rules into the always-loaded builder root).
+function targetFor(scope, audience) {
+  if (audience === 'operator') return scope === 'global' ? GLOBAL_SOUL : null;
+  if (scope === 'global') return GLOBAL_SKELETON;                 // shells/CLAUDE.md (the canonical root shell)
   if (scope === 'cockpit') return resolve(COCKPIT_ROOT, 'CLAUDE.md');
-  return resolve(MEMORY_ROOT, 'scopes', scope, 'CLAUDE.md');       // private memory repo (data scopes)
+  return resolve(MEMORY_ROOT, 'scopes', scope, 'CLAUDE.md');      // private memory repo (data scopes)
 }
 
 // ---------- fence (DESIGN §6a.4) ----------
@@ -136,12 +149,15 @@ const scopeState = (state, scope) => (state[scope] ||= { streaks: {}, graduated:
 // ---------- the adversarial gate (judge, hard tier) ----------
 // `sticky` = last run's emerging picks. Fed back so the gate keeps them unless there is a clear reason
 // to change (hysteresis): this is what turns the borderline coin-flip into a stable set run-to-run.
-function gatePrompt(scope, candidates, skeleton, sticky) {
+function gatePrompt(scope, audience, candidates, skeleton, sticky) {
   const cand = candidates.map((n) =>
     `[${n.id}] (centrality ${n.frontmatter.centrality}) ${n.frontmatter.title}\n  ${truncate(n.prose.replace(/\s+/g, ' '), PROSE_CHARS)}`
   ).join('\n\n');
   const prior = (sticky || []).filter((r) => r && r.rule).map((r) => `- ${r.rule}${r.source ? ` [[${r.source}]]` : ''}`).join('\n');
-  return `You curate the ALWAYS-LOADED behavioral rules for the "${scope}" scope's CLAUDE.md — the few \
+  const shell = audience === 'operator'
+    ? `the "${scope}" OPERATOR shell (SOUL.md — Hermes the operator's always-loaded identity)`
+    : `the "${scope}" scope's CLAUDE.md`;
+  return `You curate the ALWAYS-LOADED behavioral rules for ${shell} — the few \
 operating rules worth putting in front of the model in EVERY session (not retrieval-gated). Below are \
 candidate behavioral memory nodes, the rules ALREADY hand-written in the always-loaded skeleton, and the \
 set you selected on the PREVIOUS run.
@@ -203,24 +219,36 @@ export async function project(pool, { dryRun = false } = {}) {
   const globalSkeleton = await readFile(GLOBAL_SKELETON, 'utf8').catch(() => '');
   const state = await loadProjState();
 
-  // scopes to consider: any with behavioral candidates, any KNOWN scope whose CLAUDE.md already carries
-  // a fence (clear a now-empty one), plus any scope with existing state (so demotion/cleanup still runs).
-  const scopes = new Set(pool.filter(isBehavioral).map((n) => n.frontmatter.scope));
-  for (const s of Object.keys(state)) scopes.add(s);
-  for (const s of KNOWN_SCOPES) {
-    const t = await readFile(targetFor(s), 'utf8').catch(() => null);
-    if (t && FENCE_RE.test(t)) scopes.add(s);
+  // ROUTES (B4 audience axis): the unit of projection is a (scope × audience) route, not a scope — one
+  // scope (global) hosts both a builder route (→ CLAUDE.md) and an operator route (→ SOUL.md). Consider:
+  // any route with behavioral candidates; any route with existing projection-state (so demotion/cleanup
+  // runs); any KNOWN route whose target already carries a fence (clear a now-empty one). operator+non-global
+  // routes have no target (null) and are dropped here (GA2) — the node simply doesn't project.
+  const routes = new Map();   // routeKey -> { scope, audience, key, file }
+  const addRoute = (scope, audience) => {
+    const file = targetFor(scope, audience);
+    if (!file) return;                                  // operator+non-global: no route (GA2)
+    const key = routeKey(scope, audience);
+    if (!routes.has(key)) routes.set(key, { scope, audience, key, file });
+  };
+  for (const n of pool) if (isBehavioral(n)) addRoute(n.frontmatter.scope, n.frontmatter.audience || 'builder');
+  for (const key of Object.keys(state)) { const [s, a] = parseRouteKey(key); addRoute(s, a); }
+  for (const [s, a] of KNOWN_ROUTES) {
+    const t = await readFile(targetFor(s, a), 'utf8').catch(() => null);
+    if (t && FENCE_RE.test(t)) addRoute(s, a);
   }
 
   const audit = [];
-  for (const scope of [...scopes].sort()) {
-    const file = targetFor(scope);
+  for (const { scope, audience, key, file } of [...routes.values()].sort((a, b) => a.key.localeCompare(b.key))) {
     const existing = await readFile(file, 'utf8').catch(() => '');
-    const sc = scopeState(state, scope);
+    const sc = scopeState(state, key);
 
-    // candidates: behavioral, this scope, above the centrality floor, strongest first.
+    // candidates: behavioral, THIS route (scope × audience; pre-B4 nodes default to builder), above the
+    // centrality floor, strongest first.
     const candidates = pool
-      .filter((n) => isBehavioral(n) && n.frontmatter.scope === scope && (n.frontmatter.centrality || 0) >= CENTRALITY_FLOOR)
+      .filter((n) => isBehavioral(n) && n.frontmatter.scope === scope
+        && (n.frontmatter.audience || 'builder') === audience
+        && (n.frontmatter.centrality || 0) >= CENTRALITY_FLOOR)
       .sort((a, b) => (b.frontmatter.centrality || 0) - (a.frontmatter.centrality || 0));
     const candById = new Map(candidates.map((n) => [n.id, n]));
     const centOf = (id) => (candById.get(id)?.frontmatter.centrality || 0);
@@ -236,10 +264,13 @@ export async function project(pool, { dryRun = false } = {}) {
     // the gate only ever sees NOT-yet-graduated candidates — durable rules are held, not re-judged.
     const gateCandidates = candidates.filter((n) => !graduatedIds.has(n.id));
 
-    // dedup context = global skeleton (always loads) + this scope's skeleton (if not global) + the
-    // durable rules (already always-loaded) — so the gate never re-proposes a graduated rule.
+    // dedup context = this route's own skeleton + its durable rules (already always-loaded, so the gate
+    // never re-proposes a graduated rule), PLUS the global BUILDER skeleton — but ONLY for builder-non-global
+    // routes: shells/CLAUDE.md always-loads into every builder session, yet does NOT load into Hermes
+    // sessions, so an operator rule must not be dropped as a duplicate of builder doctrine it never sees.
+    const inheritGlobal = audience === 'builder' && scope !== 'global';
     const durableText = Object.values(sc.graduated).map((r) => `- ${r.rule}`).join('\n');
-    const skeleton = [scope === 'global' ? '' : skeletonOf(globalSkeleton), skeletonOf(existing), durableText]
+    const skeleton = [inheritGlobal ? skeletonOf(globalSkeleton) : '', skeletonOf(existing), durableText]
       .filter(Boolean).join('\n\n');
 
     // --- GATE (sticky), skipped when its inputs are unchanged: reuse last emerging set, no judge call.
@@ -251,10 +282,10 @@ export async function project(pool, { dryRun = false } = {}) {
     let emerging, gated;
     if (gateCandidates.length && gateSig !== sc.gateSig) {
       try {
-        const got = await judge(gatePrompt(scope, gateCandidates, skeleton, sc.emerging), { tier: 'hard', json: true });
+        const got = await judge(gatePrompt(scope, audience, gateCandidates, skeleton, sc.emerging), { tier: 'hard', json: true });
         emerging = Array.isArray(got) ? got : [];
         gated = true;
-      } catch (e) { audit.push({ scope, file, error: e.message }); continue; }
+      } catch (e) { audit.push({ scope, audience, key, file, error: e.message }); continue; }
     } else {
       emerging = sc.emerging || [];   // reuse — stickiness guarantees the gate would re-select it
       gated = false;
@@ -292,8 +323,8 @@ export async function project(pool, { dryRun = false } = {}) {
 
     // nothing to show AND no fence to clear -> don't create an empty file; drop any vestigial state.
     if (!durableShown.length && !emergingShown.length && !FENCE_RE.test(existing)) {
-      if (!Object.keys(sc.streaks).length) delete state[scope];
-      audit.push({ scope, file, skipped: 'no-candidates', graduated, demoted });
+      if (!Object.keys(sc.streaks).length) delete state[key];
+      audit.push({ scope, audience, key, file, skipped: 'no-candidates', graduated, demoted });
       continue;
     }
 
@@ -301,7 +332,7 @@ export async function project(pool, { dryRun = false } = {}) {
     const next = spliceFence(existing, fence);
 
     if (dryRun) {
-      audit.push({ scope, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, preview: fence, wrote: false });
+      audit.push({ scope, audience, key, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, preview: fence, wrote: false });
       continue;
     }
 
@@ -311,7 +342,7 @@ export async function project(pool, { dryRun = false } = {}) {
       await writeFile(file, next, 'utf8');
       commit = await commitFile(file);
     }
-    audit.push({ scope, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, wrote: next !== existing, commit });
+    audit.push({ scope, audience, key, file, durable: durableShown, emerging: emergingShown, graduated, demoted, dropped, gated, wrote: next !== existing, commit });
   }
 
   // persist + commit projection state (no-op commit if unchanged, e.g. a fully-settled scope).
@@ -326,11 +357,12 @@ export function printProjection(audit, dryRun) {
   const lifecycle = (a) => [a.graduated?.length ? `+${a.graduated.length} graduated` : '',
     a.demoted?.length ? `-${a.demoted.length} demoted` : ''].filter(Boolean).join(', ');
   for (const a of audit) {
-    if (a.skipped) { const lc = lifecycle(a); console.log(`  · ${a.scope}: skipped (${a.skipped})${lc ? ` [${lc}]` : ''}`); continue; }
-    if (a.error) { console.log(`  ✗ ${a.scope}: gate failed — ${a.error}`); continue; }
+    const label = a.key || a.scope;   // operator routes show as "<scope>::operator"
+    if (a.skipped) { const lc = lifecycle(a); console.log(`  · ${label}: skipped (${a.skipped})${lc ? ` [${lc}]` : ''}`); continue; }
+    if (a.error) { console.log(`  ✗ ${label}: gate failed — ${a.error}`); continue; }
     const where = a.commit ? `[${a.commit}]` : (dryRun ? '[preview]' : '');
     const tags = [a.gated ? 'gated' : 'reused', lifecycle(a), a.dropped ? `${a.dropped} over cap` : ''].filter(Boolean).join(', ');
-    console.log(`  → ${a.scope}: ${a.durable.length} durable / ${a.emerging.length} emerging (${tags}) ${where}  ${a.file}`);
+    console.log(`  → ${label}: ${a.durable.length} durable / ${a.emerging.length} emerging (${tags}) ${where}  ${a.file}`);
     for (const r of a.durable) console.log(`      ★ ${r.rule}${r.source ? `  [[${r.source}]]` : ''}`);
     for (const r of a.emerging) console.log(`      · ${r.rule}${r.source ? `  [[${r.source}]]` : ''}`);
     if (dryRun && a.preview) console.log(a.preview.split('\n').map((l) => '      | ' + l).join('\n'));

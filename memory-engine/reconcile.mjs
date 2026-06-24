@@ -108,7 +108,7 @@ function parseStaging(text) {
       text: body,
     };
   });
-  return { anchor: fm.session_anchor || 'unknown', scope: fm.scope, transcript: fm.transcript, turns };
+  return { anchor: fm.session_anchor || 'unknown', scope: fm.scope, transcript: fm.transcript, brain: fm.brain, turns };
 }
 
 async function stagingFiles(scope) {
@@ -233,7 +233,7 @@ async function main() {
         const newTurns = parsed.turns.slice(consumed);
         const { digest, turnIndex } = buildDigest(newTurns);
         if (!digest.trim()) { state.consumed[file] = parsed.turns.length; continue; } // only noise -> mark consumed
-        work.push({ scope, file, anchor: parsed.anchor, transcript: parsed.transcript,
+        work.push({ scope, file, anchor: parsed.anchor, transcript: parsed.transcript, brain: parsed.brain,
           turnIndex, digest, totalTurns: parsed.turns.length, consumed });
       }
     }
@@ -262,6 +262,10 @@ async function main() {
       if (!Array.isArray(proposals)) { console.error(`reconcile: non-array distill for ${basename(w.file)}; skipping.`); continue; }
       audit.scopes[w.scope] = (audit.scopes[w.scope] || 0) + proposals.length;
 
+      // audience (B4): brain stamp is per-file (sessions are single-brain) -> audience is per work-unit,
+      // independent of any p.scope override. Hermes-origin staging mints operator nodes; default builder.
+      const audience = w.brain === 'hermes' ? 'operator' : 'builder';
+
       for (const p of proposals) {
         if (!p || !p.prose || !p.title) continue;
         const scope = p.scope || w.scope;
@@ -285,10 +289,10 @@ async function main() {
             action = ['merge', 'supersede', 'new'].includes(d?.action) ? d.action : 'new';
             mergedProse = d?.prose || null;
           } catch { action = 'new'; }
-          if (action === 'merge') { stageMerge(existing, p, mergedProse, scope, claim, citation, audit, cache, pv); continue; }
+          if (action === 'merge') { stageMerge(existing, p, mergedProse, scope, audience, claim, citation, audit, cache, pv); continue; }
           if (action === 'supersede') { stageSupersede(existing, audit); /* fall through to mint the new node */ }
         }
-        stageNew(p, scope, claim, citation, takenIds, pool, audit, cache, w.anchor, pv);
+        stageNew(p, scope, audience, claim, citation, takenIds, pool, audit, cache, w.anchor, pv);
       }
     }
 
@@ -335,13 +339,13 @@ async function main() {
 }
 
 // ---- staging helpers (mutate `pool` + `audit` in place; the writer commits the pool) ----
-function stageNew(p, scope, claim, citation, takenIds, pool, audit, cache, anchor, pv) {
+function stageNew(p, scope, audience, claim, citation, takenIds, pool, audit, cache, anchor, pv) {
   const id = uniqueId(p.title, takenIds);
   const node = {
     id,
     frontmatter: {
       id, title: p.title, type: ['knowledge', 'identity', 'feedback'].includes(p.type) ? p.type : 'knowledge',
-      claim, scope,
+      claim, scope, audience,
       centrality: clamp01(p.centrality), cluster: p.cluster || 'unclustered',
       tags: arr(p.tags), entities: ent(p.entities),
       ...(citation ? { citation } : {}),
@@ -355,7 +359,7 @@ function stageNew(p, scope, claim, citation, takenIds, pool, audit, cache, ancho
   audit.added.push({ id, title: p.title, claim, type: node.frontmatter.type });
 }
 
-function stageMerge(existing, p, mergedProse, scope, claim, citation, audit, cache, pv) {
+function stageMerge(existing, p, mergedProse, scope, audience, claim, citation, audit, cache, pv) {
   const before = { centrality: existing.frontmatter.centrality || 0, cluster: existing.frontmatter.cluster, hadCitation: !!existing.frontmatter.citation };
   const newProse = mergedProse || existing.prose;
   const newCentrality = clamp01(Math.max(existing.frontmatter.centrality || 0, p.centrality || 0));
@@ -374,6 +378,8 @@ function stageMerge(existing, p, mergedProse, scope, claim, citation, audit, cac
   existing.prose = newProse;
   existing.frontmatter.centrality = newCentrality;
   existing.frontmatter.cluster = newCluster;
+  // audience (B4, GA3): any operator provenance on a merged span -> operator; pre-B4 node (no audience) = builder.
+  existing.frontmatter.audience = (existing.frontmatter.audience === 'operator' || audience === 'operator') ? 'operator' : 'builder';
   existing.frontmatter.tags = [...new Set([...(existing.frontmatter.tags || []), ...arr(p.tags)])];
   if (citation && !existing.frontmatter.citation) { existing.frontmatter.citation = citation; existing.frontmatter.claim = 'fact'; }
   existing.frontmatter.updated = nowISO();

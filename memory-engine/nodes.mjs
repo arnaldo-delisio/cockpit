@@ -17,7 +17,7 @@ export const INDEX_FILE = resolve(MEMORY_ROOT, 'knowledge', 'INDEX.md');
 // Canonical frontmatter field order (DESIGN §6a.1). Built in this order so serialized nodes
 // stay diff-stable across runs. `citation` is present iff claim==fact.
 export const FIELD_ORDER = [
-  'id', 'title', 'type', 'claim', 'scope', 'centrality', 'cluster',
+  'id', 'title', 'type', 'claim', 'scope', 'audience', 'centrality', 'cluster',
   'tags', 'entities', 'citation', 'superseded', 'schema_version',
   'created', 'updated', 'last_synced',
 ];

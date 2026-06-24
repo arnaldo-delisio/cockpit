@@ -60,7 +60,7 @@ bridge wired. This is **execution, not design**.
 | 2 | Capture hooks (MEM-16/22 / §9) | ✅ done |
 | 3 | Reconciler + retrieval (MEM-8/9/11/12/24 / §5/§7/§10) — **the heart** | ✅ done (v1) |
 | 4 | CLAUDE.md projection (MEM-20 / §6a.4) | ✅ done (v1) |
-| 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | 🔄 A (Claude-side) DONE; B (Hermes) + C (close-out) pending |
+| 5 | Cutover + salvage (checklist 1b/c + 2; TOOL-6) + delete this file | 🔄 A (Claude-side) DONE; B (Hermes B1–B4) DONE; C (close-out) pending |
 
 ---
 
@@ -200,15 +200,20 @@ bridge wired. This is **execution, not design**.
       neutral SOUL) that isolates `judge()` from `~/.hermes`. So a real `~/.hermes/SOUL.md` **no longer leaks**
       into `judge()`. **Remaining B3 work = just write `shells/SOUL.md` thin (hand-skeleton only; B4 adds the
       projection fence) + symlink `~/.hermes/SOUL.md` → it.**
-- [ ] B4 **Extend MEM-20 projection to the global operator shell** (in-scope BUILD, not just a decision).
-      Add `audience` to the node template (§6a.1) + mint it in the reconciler distill from the brain-stamp
-      (Hermes-origin → `operator`, default `builder`; **any-Hermes-provenance → operator** on merged spans, GA3);
-      route `global + operator → shells/SOUL.md` in `projection.mjs` `targetFor` (inherits the three-layer fence).
-      Renders EMPTY now (zero operator nodes). **GA2 limitation (recorded):** audience routing is scope-naive —
-      Hermes runs in `~/.cockpit` (scope=cockpit), and only `global`+operator routes to SOUL, so SOUL won't
-      organically fill until a scope-aware route or global Hermes runs exist; revisit when real operator nodes
-      appear. **Acceptance = a SYNTHETIC global+operator node renders into SOUL's fence** in B4's dry-run (proves
-      the axis), NOT organic fill. Defer per-project `HERMES.md` operator shells as YAGNI.
+- [x] B4 **Extend MEM-20 projection to the global operator shell** — **DONE 2026-06-24.** Added `audience` to
+      `nodes.mjs` FIELD_ORDER (after `scope`; reconciler-owned, diff-stable — existing nodes gain it only on
+      rewrite); `reconcile.mjs` lifts `fm.brain` in `parseStaging`, threads it onto the work-unit, derives
+      `audience = brain==='hermes' ? 'operator' : 'builder'` (per work-unit), sets it in `stageNew`, and applies
+      **GA3** in `stageMerge` (any operator provenance on a merged span → operator; pre-B4 = builder); `projection.mjs`
+      routes by **(scope × audience)** — `targetFor(scope, audience)`: operator+global → `shells/SOUL.md`,
+      operator+non-global → **null (NO route, GA2)**, builder unchanged. The project() loop's unit is now a
+      **route** (one scope can host builder→CLAUDE.md + operator→SOUL.md); builder routes keep the **bare** state
+      key, operator routes get `<scope>::operator`. **Skeleton-inheritance fix:** the inherited global *builder*
+      skeleton is gated to builder-non-global routes only (SOUL doesn't load `shells/CLAUDE.md`). **Acceptance MET:**
+      a SYNTHETIC global+operator node → `project([synthetic],{dryRun:true})` rendered into SOUL's **Emerging** fence
+      preview, ONE `judge('hard')` call, zero residue (SOUL fenceless, `projection-state.json` absent, no commits).
+      **GA2 holds:** real runs render SOUL EMPTY (Hermes runs in `cockpit` scope → operator nodes route to null).
+      Per-project `HERMES.md` deferred YAGNI. Spec-text promotion (MEM-25 amendment + DESIGN §6a.1+§5) rides into C.
 
 **C. Tracker close-out — ONLY on the user's explicit say-so:**
 - [ ] C1 **Internalization audit:** confirm every fact in THIS file is permanently homed in STATE/DECISIONS/
@@ -345,9 +350,28 @@ bridge wired. This is **execution, not design**.
   ~/.hermes/SOUL.md content is irrelevant). Omitted a model-routing section (Hermes config owns routing) + the
   generic working-stance line (cross-brain canon). Symlink is out-of-repo → `bootstrap.sh`. Next: B4.
 
+- **2026-06-24 — Phase 5 B4: the audience axis (operator-shell projection) — DONE + acceptance-proven.** Three
+  surgical changes: (1) `nodes.mjs` FIELD_ORDER gains `audience` after `scope` (reconciler-owned, diff-stable);
+  (2) `reconcile.mjs` lifts `fm.brain` → work-unit → `audience = brain==='hermes' ? 'operator' : 'builder'` (per
+  work-unit, brain is per-file), `stageNew` sets it, `stageMerge` unions it (GA3: any operator provenance →
+  operator; pre-B4 = builder, backfilled on merge); (3) `projection.mjs` routes by **(scope × audience)** — the
+  loop's unit became a **route** (not a scope), `targetFor(scope,audience)` sends operator+global → `shells/SOUL.md`
+  and operator+non-global → **null** (GA2, no builder-shell fallback), builder routes unchanged with bare state
+  keys, operator routes suffixed `::operator`. **Build-local calls:** (a) acceptance pool = **minimal [synthetic]**
+  (user's call) so only the operator route gates → exactly ONE `judge('hard')`; (b) **route-keyed loop** (clean
+  structural form) over running project twice; (c) **operator gate descriptor** — the gate prompt frames the route
+  as "the OPERATOR shell (SOUL.md)" vs "the scope's CLAUDE.md"; (d) **skeleton-inheritance gate** — the inherited
+  global builder skeleton applies to builder-non-global routes ONLY (SOUL never loads `shells/CLAUDE.md`, so an
+  operator rule isn't wrongly deduped against builder doctrine). **Acceptance MET** (synthetic global+operator node
+  → SOUL Emerging fence preview, one gate call, non-destructive — verified SOUL fenceless + no `projection-state.json`
+  + no commits after). **GA2 accepted v1 limitation:** real runs render SOUL EMPTY (Hermes = `cockpit` scope →
+  operator nodes route to null) until a scope-aware route / global-Hermes run exists. DECISIONS/DESIGN untouched —
+  the MEM-25 amendment + DESIGN §6a.1 `audience` line + §5 line (with rejected alternatives) promote at **C**. Files:
+  `memory-engine/{nodes,reconcile,projection}.mjs`. **Phase-5-B batch (B1→B4) COMPLETE; STOP before C.**
+
 ## Current position
 
-**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) DONE + ACTIVATED; judge.mjs brain-neutrality fix DONE + committed (B3 blocker CLEARED) — next is B2 (salvage + merge-chain verify), then B3 (write `shells/SOUL.md` thin + symlink `~/.hermes/SOUL.md` → it — now UNGATED), then B4 (audience-axis projection to SOUL).**
+**Phases 0–4 done; Phase 5 A DONE; Phase 5 B COMPLETE (B1 staging-writer bridge + B2 salvage + B3 operator shell + B4 audience-axis projection — all DONE) — next is C (internalization audit + tracker delete), ONLY on the user's explicit say-so.**
 Substrate bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine
 run end-to-end, the reconciler projects behavioral nodes into scope-routed CLAUDE.md, and the Claude-side
 cutover off native auto-memory is complete.
