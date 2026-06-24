@@ -15,7 +15,7 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
 
-<!-- managed:reconciler:begin schema=2 inputs=eb2a079a -->
+<!-- managed:reconciler:begin schema=2 inputs=97aa282a -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Verify source and subagent claims before freezing them into memory, code, or decisions. [[cockpit-reviewer-workflow]]
