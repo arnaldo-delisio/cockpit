@@ -10,9 +10,10 @@
 # nightly, off-peak, unattended (DESIGN §5/§8; MEM-16 two-tempo; MEM-25 runtime). The lockfile already
 # fences it against a manual run; judge() is already brain-neutral.
 #
-# (Other out-of-repo wiring — settings.json capture hooks, ~/.hermes config + SOUL symlink, autoMemory
-# off, the skills bridge — is tracked separately in STATE/log and not yet folded in here. Add it as its
-# own section when those are reconciled clone-clean.)
+# It ALSO reproduces the OM-2 home shell wiring (clone-clean): the ~/.hermes/SOUL.md → shells/SOUL.md
+# symlink (how `hermes -z` loads the operator shell as identity slot #1) + the ~/CLAUDE.md @-import loader
+# and the ~/SOUL.md signpost. (Still tracked separately, NOT yet folded in: settings.json capture hooks,
+# the ~/.hermes config hook + autoMemory-off flags, the skills bridge — add them here once reconciled.)
 #
 # Idempotent + clone-clean: unit files use systemd's %h specifier (no hardcoded home), every path resolves
 # relative to this script, no secrets. Safe to re-run.
@@ -30,6 +31,40 @@ ENGINE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # ~/.cockpit/memo
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE="cockpit-reconcile.service"
 TIMER="cockpit-reconcile.timer"
+
+# ── OM-2 home shell wiring (clone-clean; installed regardless of systemd) ─────────────────────────
+# The operator shell loads via a symlink ~/.hermes/SOUL.md → shells/SOUL.md (`hermes -z` injects it as
+# identity slot #1; SOUL.md can't @-import — that is builder-only). The two home files are thin loaders/
+# signposts over the canonical in-repo shells. Idempotent: symlink replaced in place; files written only
+# when their content drifts (no mtime churn).
+COCKPIT_ROOT="$(dirname "$ENGINE_DIR")"
+SHELLS_DIR="$COCKPIT_ROOT/shells"
+
+install_file() {  # $1=path  $2=content — write only if missing or changed
+  if [ ! -e "$1" ] || [ "$(cat "$1" 2>/dev/null)" != "$2" ]; then
+    printf '%s\n' "$2" > "$1"
+    echo "bootstrap: wrote $1"
+  else
+    echo "bootstrap: $1 already current"
+  fi
+}
+
+mkdir -p "$HOME/.hermes"
+ln -sfn "$SHELLS_DIR/SOUL.md" "$HOME/.hermes/SOUL.md"   # operator load wiring (OM-2 resolved 2026-06-24)
+echo "bootstrap: linked ~/.hermes/SOUL.md → $SHELLS_DIR/SOUL.md"
+
+install_file "$HOME/CLAUDE.md" '<!-- Loader. The canonical builder shell is version-controlled at ~/.cockpit/shells/CLAUDE.md and imported below — edit it there, not here. -->
+
+@.cockpit/shells/CLAUDE.md'
+
+install_file "$HOME/SOUL.md" '<!-- Pointer only — nothing loads this file. Hermes loads the operator shell via the symlink
+     ~/.hermes/SOUL.md → ~/.cockpit/shells/SOUL.md (`hermes -z` injects it as identity slot #1).
+     SOUL.md cannot use the Claude Code @-import (builder-only); the symlink is the wiring.
+     Edit the canonical shell at ~/.cockpit/shells/SOUL.md, not here. -->
+
+# Global Hermes Operator Shell — pointer
+
+Canonical: ~/.cockpit/shells/SOUL.md  (loaded by Hermes via ~/.hermes/SOUL.md → it).'
 
 if ! command -v systemctl >/dev/null 2>&1; then
   echo "bootstrap: systemctl not found — this host has no systemd; install a cron line by hand instead." >&2
