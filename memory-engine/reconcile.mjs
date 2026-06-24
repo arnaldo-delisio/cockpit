@@ -1,34 +1,48 @@
 #!/usr/bin/env node
-// reconcile.mjs — the single-writer reconciler (DESIGN §5; MEM-8/9/11/12). THE HEART.
+// reconcile.mjs — the single-writer reconciler (DESIGN §5; MEM-8/9/11/27). THE HEART.
 //
 // Reads each live scope's near-raw staging (what capture appended), distills it into canonical
-// graph nodes via judge() (the model adapter), dedups against the existing pool, and commits —
-// the ONLY writer of knowledge/nodes/ (MEM-8). v1 = single on-demand batch command; the nightly
-// "dreaming" timer (§8 mode 2) is later.
+// graph nodes via judge() (the model adapter), then CONSOLIDATES (LLM-semantic dedup, MEM-27)
+// against the existing pool, and commits — the ONLY writer of knowledge/nodes/ (MEM-8).
+//
+// Pipeline (MEM-27, replaces the per-proposal cosine→merge mint path):
+//   distill (per work-unit, altitude-filtered MEM-18) → group (size-triggered, per scope)
+//     → consolidate (ONE judge('hard') per group → GROUPING DECISIONS only; the reconciler then assembles
+//        each node from the distilled backing candidates — fold paraphrases / merge into existing / supersede)
+//     → guard (MEM-9 on every update/supersede) → two-phase commit → project (MEM-20).
+// Two tempos, same engine: `node reconcile.mjs` (on-write: new staging vs existing) and
+// `node reconcile.mjs --reflect` (nightly: consolidate a scope's existing nodes with NO new staging —
+// self-heals accumulated drift/dups). The cron/timer that fires --reflect is out-of-repo (bootstrap.sh).
+//
+// Why consolidation, not cosine (MEM-27): cosine cannot separate same-rule from different-rule for terse
+// behavioral nodes (within-synonym 0.33–0.84 overlaps cross-distinct ≤0.54) — no SIM_MERGE cutoff works.
+// Embeddings stay for RETRIEVAL + cache warmth (retrieval.mjs); they no longer gate the mint path.
 //
 // Locked invariants this file must never break:
 //   • single-writer        — only this process writes canonical nodes (lockfile-fenced, MEM-9).
 //   • two-phase commit      — commit nodes FIRST, THEN advance the consumed marker; a crash between
-//                             re-processes the same staging next run, and dedup absorbs it (idempotent).
+//                             re-processes the same staging next run, and consolidation absorbs it.
 //   • fact needs a citation — a claim distilled from a real captured turn cites it
 //                             (stg:<anchor>:<sha8(turn-text)>); otherwise it downgrades to inference.
-//   • instability guard     — a rewrite that drops a citation / swings centrality / flips a high-
-//                             centrality node's cluster is HELD for review, never auto-committed.
-//   • bootstrap mode (§6a.3)— below a node-count floor the graph is too sparse for heavy recompute/GC;
-//                             we append + use the model's coarse centrality/cluster, no thrash.
+//   • instability guard     — every consolidation update/supersede that drops a citation / swings
+//                             centrality / flips a high-centrality node's cluster (or supersedes a
+//                             high-centrality node) is HELD for review, never auto-committed (MEM-9).
+//   • conservative keep     — an existing node the consolidator never mentions is kept UNCHANGED
+//                             (logged), never silently dropped.
 //
-// Usage:  node reconcile.mjs [--dry-run] [--scope <name>]
+// Usage:  node reconcile.mjs [--dry-run] [--reflect] [--scope <name>]
 //   --dry-run : full preview (loads model, calls judge, prints the audit diff) with ZERO writes.
+//   --reflect : also consolidate scopes that have existing nodes but NO new staging (self-healing).
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, writeFile, mkdir, readdir, open, unlink, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, open, unlink } from 'node:fs/promises';
 import { resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { judge } from './judge.mjs';
-import { MEMORY_ROOT, NODES_DIR, INDEX_FILE, loadPool, writeNode, serializeNode, uniqueId } from './nodes.mjs';
-import { EmbeddingCache, syncCache, embed, contentHash, cosineTopK } from './retrieval.mjs';
+import { MEMORY_ROOT, INDEX_FILE, loadPool, writeNode, uniqueId } from './nodes.mjs';
+import { EmbeddingCache, syncCache } from './retrieval.mjs';
 import { project, printProjection } from './projection.mjs';
 
 const execFileP = promisify(execFile);
@@ -36,10 +50,16 @@ const execFileP = promisify(execFile);
 const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
 
 // --- tunables (grey-area picks; tune after real runs) ---
-const SIM_MERGE = 0.82;            // cosine ≥ this -> proposed node is a merge/supersede candidate
-const BOOTSTRAP_MAX_NODES = 12;    // below this, append-only mode: no heavy recompute/GC (§6a.3)
-const DIGEST_TURN_CAP = 80;        // bound judge cost: at most this many turns per scope digest
-const TURN_CHARS = 600;            // per-turn truncation in the digest
+const BOOTSTRAP_MAX_NODES = 12;      // below this, the audit prints a bootstrap-floor label (display only, §6a.3)
+const DIGEST_TURN_CAP = 80;          // bound judge cost: at most this many turns per work-unit digest
+const TURN_CHARS = 600;              // per-turn truncation in the digest
+const CONSOLIDATE_PROSE_CHARS = 600; // per-item truncation handed to the consolidator
+const GROUP_CHAR_BUDGET = 180_000;   // scope prompt-body chars before splitting by cluster label (MEM-27 part C);
+                                     // gpt-5.5 ~400K-token window — one consolidate call stays well below this.
+const DISTILL_TIMEOUT_MS = 180_000;  // per work-unit distill (hard tier); judge default 120s is too tight at scale.
+const CONSOLIDATE_TIMEOUT_MS = 300_000; // the heaviest call: whole-scope input context in one pass. Output is now
+                                        // DECISIONS-ONLY (ids/indices/centrality — a few KB), so the old full-prose
+                                        // reply overflow is gone; budget stays generous for reasoning over a big scope.
 const GUARD_CENTRALITY_DELTA = 0.25;
 const GUARD_HIGH_CENTRALITY = 0.50;
 
@@ -137,19 +157,17 @@ function buildDigest(turns) {
   return { digest, turnIndex };
 }
 
-// ============================================================ distillation (judge, hard tier)
+// ============================================================ distillation (judge, hard tier) — MEM-18 altitude
 const DISTILL_SCHEMA = `Return ONLY a JSON array (possibly empty). Each element is a node:
 {
   "title": "<short human title>",
   "type": "knowledge" | "identity" | "feedback",
-  "scope": "<scope>",
   "prose": "<2-5 sentences of distilled, self-contained fact/lesson — clean enough to embed; NOT a transcript quote>",
   "tags": ["<free-form>", ...],
   "entities": { "concepts": [...], "people": [...], "products": [...] },
   "centrality": <0.0-1.0 importance>,
   "cluster": "<short topic label>",
-  "source_turns": ["T3", ...],
-  "links": ["<existing-or-expected node id to wikilink>", ...]
+  "source_turns": ["T3", ...]
 }`;
 
 function distillPrompt(scope, digest) {
@@ -157,14 +175,25 @@ function distillPrompt(scope, digest) {
 digest of captured conversation turns (each "[Tn]" is a turn; "{...}" are mechanical salience markers: \
 #good/#bad = explicit human verdict, keep/correction/decision/error = inferred).
 
-Distill DURABLE memory from it — facts worth remembering, decisions, and behavioral lessons. Rules:
-- DISTILL, don't dump: only durable, reusable knowledge. Skip transient chatter, tool noise, one-offs.
-- type "feedback" = a behavioral lesson (how to work) minted from a correction/#bad/decision/#good.
-- type "identity" = durable truth about who is served / voice / mission / standing preference.
-- type "knowledge" = a distilled fact or relationship.
-- "source_turns" = the [Tn] ids that back the node (for provenance). Omit if it's pure synthesis.
+Distill ONLY DURABLE, EVERGREEN memory — knowledge worth keeping long after the current work ships. \
+Apply this altitude filter (MEM-18) strictly:
+
+INCLUDE (these belong in the knowledge graph):
+- evergreen knowledge: a distilled fact, relationship, or finding that stays true beyond this session.
+- standing behavioral rules: how to work — a correction / #bad / decision / #good that should change FUTURE behavior.
+- identity: durable truth about who is served / voice / mission / a standing preference.
+
+EXCLUDE (these are LOG CHRONOLOGY, not graph nodes — do NOT emit them at all):
+- build/session mechanics: phase status, "we are on step/phase X", what was just committed/built, next steps.
+- handoff / process notes: "do X in a fresh chat", "internalize Y", "resume from Z", TODO/bookkeeping.
+- transient state: what is currently in-flight, one-off tool noise, status reports, chatter.
+If a turn only reports progress, status, or hands off work, it is NOT durable — skip it.
+
+Per surviving node:
+- type "feedback" = a behavioral lesson; "identity" = durable who/voice/mission/preference; "knowledge" = a fact/relationship.
+- "source_turns" = the [Tn] ids that back the node (provenance). Omit if it is pure synthesis.
 - "centrality" = how load-bearing this is (0=trivial, 1=foundational). "cluster" = a short topic label.
-- Prefer FEW high-quality nodes over many shallow ones. Empty array if nothing is durable.
+- Prefer FEW high-quality nodes over many shallow ones. Empty array if nothing survives the altitude filter.
 
 ${DISTILL_SCHEMA}
 
@@ -172,17 +201,218 @@ DIGEST:
 ${digest}`;
 }
 
-// ============================================================ dedup / merge (judge, bulk tier)
-function mergePrompt(proposed, existing) {
-  return `A new memory node is proposed. An existing node is semantically very close. Decide the action.
-Reply ONLY JSON: { "action": "merge" | "supersede" | "new", "prose": "<resulting prose if merge/supersede, else omit>", "reason": "<short>" }
-- "merge": same fact/lesson -> combine into one improved prose (keep the existing node id).
-- "supersede": the new one REPLACES/contradicts the old (old kept but marked not-current).
-- "new": actually distinct despite similarity -> keep both.
+// ============================================================ consolidation (judge, hard tier) — MEM-27 + compact-decisions amendment
+// Output is DECISIONS-ONLY (the grouping: ids / backing indices / centrality) — NO prose/title/tags/type.
+// The reconciler assembles each final node from the already-distilled backing candidates (their prose is reliable
+// and small-per-call) or the existing node. Splitting decide-grouping from write-prose bounds the reply to a few
+// KB so a big-scope consolidate no longer overflows the model's single-reply ceiling.
+const CONSOLIDATE_SCHEMA = `Return ONLY a JSON array — the GROUPING DECISIONS for this group's canonical node set.
+Return DECISIONS ONLY — ids, backing indices, centrality. Do NOT write node prose/title/tags/type: they already
+exist (the distiller wrote each candidate's prose; existing nodes keep theirs). The reconciler assembles each final
+node from the candidates you point at. Echo EVERY existing node exactly once (action "keep" if unchanged) and add
+one element per genuinely-new node. Per element:
+{
+  "action": "keep" | "update" | "new" | "supersede",
+  "id": "<existing node id — REQUIRED for keep/update/supersede; OMIT for new>",
+  "backing": [<NEW-candidate index this node folds in>, ...],   // REQUIRED for "new"; the candidates that back it
+  "supersedes": ["<existing id this node absorbs/replaces>", ...],
+  "centrality": <0.0-1.0 — your cross-evidence importance judgment, not a max of inputs>,
+  "cluster": "<short topic label, optional>"
+}`;
 
-EXISTING [${existing.id}] (${existing.frontmatter.type}): ${existing.prose}
+function consolidatePrompt(scope, proposals, existing) {
+  const prop = proposals.map((p) =>
+    `[#${p.idx}] (${p.type}, centrality ${p.centrality}) ${p.title}\n  ${truncate((p.prose || '').replace(/\s+/g, ' '), CONSOLIDATE_PROSE_CHARS)}`
+  ).join('\n\n') || '(none — reflection pass: consolidate the existing nodes against EACH OTHER for drift/dups)';
+  const exist = existing.map((n) =>
+    `[${n.id}] (${n.frontmatter.type}, centrality ${n.frontmatter.centrality ?? '?'}) ${n.frontmatter.title}\n  ${truncate((n.prose || '').replace(/\s+/g, ' '), CONSOLIDATE_PROSE_CHARS)}`
+  ).join('\n\n') || '(none — empty scope)';
+  return `You are the memory reconciler's CONSOLIDATOR for the "${scope}" scope. You receive the scope's \
+EXISTING canonical knowledge nodes and a set of NEW candidate nodes freshly distilled from conversation. \
+Decide how they consolidate — which candidates fold together, which restate an existing node, which are genuinely \
+new — so each distinct lesson/fact is represented ONCE. Output GROUPING DECISIONS only: the reconciler assembles \
+the prose from the candidates you cite; you never write prose.
 
-PROPOSED (${proposed.type}): ${proposed.prose}`;
+Rules:
+- FOLD PARAPHRASES: if several NEW candidates state the same rule/fact, emit ONE node for it (list ALL their
+  indices in "backing"). Short behavioral rules are often the same rule reworded — collapse them aggressively.
+- MERGE INTO EXISTING: if a NEW candidate restates an EXISTING node, "update" that existing node (keep its "id"),
+  folding in any added nuance; put the backing candidate indices in "backing".
+- ABSORB DUPLICATE EXISTING NODES: if two EXISTING nodes say the same thing, "update" one and list the other
+  id in its "supersedes".
+- KEEP DISTINCT: genuinely different nodes stay separate. An existing node that nothing touches → "keep" (echo
+  its id; omit prose). Do NOT drop an existing node by omission — echo it.
+- CONTRADICTIONS: if a NEW candidate corrects/replaces an EXISTING node, emit the new/updated node AND name the
+  outdated id in its "supersedes" (or a standalone {action:"supersede", id}).
+- "centrality" = how load-bearing the node is across ALL its evidence (your judgment, not a max of inputs).
+- Prefer FEW high-quality nodes. Be conservative on identity/feedback wording — preserve meaning when merging.
+
+${CONSOLIDATE_SCHEMA}
+
+EXISTING CANONICAL NODES:
+${exist}
+
+NEW CANDIDATES (reference by "#n" in "backing"):
+${prop}`;
+}
+
+// ============================================================ grouping (size-triggered, MEM-27 part C)
+// One group = the whole scope until it overflows one judge call; then split by the distiller's cluster label.
+// A single label that still overflows is the SUB-CLUSTER SEAM — DEFERRED (needs real edge-data; building it
+// now would contradict MEM-24). We process the oversized label whole and log a warning (never silent).
+function groupForConsolidation(proposals, existing) {
+  const sizeOf = (ps, ns) =>
+    ps.reduce((s, p) => s + (p.prose || '').length + 120, 0) + ns.reduce((s, n) => s + (n.prose || '').length + 120, 0);
+  if (sizeOf(proposals, existing) <= GROUP_CHAR_BUDGET) return [{ proposals, existing }];
+  const groups = new Map();
+  const bucket = (c) => { if (!groups.has(c)) groups.set(c, { proposals: [], existing: [] }); return groups.get(c); };
+  for (const p of proposals) bucket(p.cluster || 'unclustered').proposals.push(p);
+  for (const n of existing) bucket(n.frontmatter.cluster || 'unclustered').existing.push(n);
+  for (const g of groups.values())
+    if (sizeOf(g.proposals, g.existing) > GROUP_CHAR_BUDGET)
+      console.error('reconcile: a single cluster exceeds the judge budget — sub-cluster seam deferred (MEM-24); processing whole.');
+  return [...groups.values()];
+}
+
+// ============================================================ provenance derivation (MEM-27 part 3)
+// citation ← first resolvable backing source-turn (stg:<anchor>:<sha8(turn-text)>); preserves fact-vs-inference.
+function deriveCitation(backing) {
+  for (const p of backing) for (const ref of (p.source_turns || [])) {
+    const i = String(ref).replace(/[^\d]/g, '');
+    const txt = p._wu.turnIndex[i];
+    if (txt) return `stg:${p._wu.anchor}:${sha8(txt)}`;
+  }
+  return null;
+}
+// audience ← operator if ANY backing proposal came from a Hermes work-unit, else builder (operator∪builder=operator).
+function deriveAudience(backing) { return backing.some((p) => p._wu.brain === 'hermes') ? 'operator' : 'builder'; }
+
+// ============================================================ apply a consolidation result (MEM-27 part 2/3 + compact amendment)
+// The model returns DECISIONS ONLY; this assembles each final node from its backing candidates (new) or the
+// existing node (update) — prose is the distiller's, never the consolidator's. Mutates `pool` (+ byId) + `audit`
+// + `takenIds`. Conservative: an existing node the model never names is kept UNCHANGED (logged in
+// audit.unmentioned). Every update/supersede passes the MEM-9 instability guard.
+function applyConsolidation(result, proposals, existing, scope, pool, takenIds, audit) {
+  if (!Array.isArray(result)) { console.error(`reconcile: non-array consolidate for scope ${scope}; skipping group.`); return; }
+  const byId = new Map(pool.map((n) => [n.id, n]));
+  const propByIdx = new Map(proposals.map((p) => [p.idx, p]));
+  const backingOf = (r) => arr(r.backing).map((i) => propByIdx.get(Number(i))).filter(Boolean);
+  const mentioned = new Set();        // existing ids the model named (keep/update/supersede/absorbed)
+  const standaloneSupersede = [];     // explicit supersede actions (not an absorb) — guarded at the end
+
+  for (const r of result) {
+    if (!r || typeof r !== 'object') continue;
+    const action = ['keep', 'update', 'new', 'supersede'].includes(r.action) ? r.action : (r.id ? 'update' : 'new');
+
+    if (action === 'keep') {
+      if (r.id) mentioned.add(r.id);
+      for (const sid of arr(r.supersedes)) { mentioned.add(sid); standaloneSupersede.push(sid); }  // keep+absorb = mark dup
+      continue;
+    }
+    if (action === 'supersede') {
+      if (r.id) { mentioned.add(r.id); standaloneSupersede.push(r.id); }
+      continue;
+    }
+
+    const backing = backingOf(r);
+    const citation = deriveCitation(backing);
+    const audFromBacking = deriveAudience(backing);
+
+    if (action === 'update' && r.id && byId.has(r.id)) {
+      mentioned.add(r.id);
+      for (const sid of arr(r.supersedes)) mentioned.add(sid);    // absorbed ids: handled inside stageUpdate (only if it applies)
+      // decisions-only: existing prose stays; centrality/cluster are the model's, tags/entities fold in from backing.
+      const spec = { centrality: r.centrality, cluster: r.cluster, tags: unionTags(backing), entities: unionEntities(backing) };
+      stageUpdate(byId.get(r.id), spec, citation, audFromBacking, arr(r.supersedes), byId, audit);
+      continue;
+    }
+    // new (or update naming an unknown id → mint fresh). Assemble from the backing candidates the distiller wrote:
+    // the primary (highest-centrality, tie→lowest idx) sources title/type/prose; tags/entities union all backing.
+    // No backing → no prose source → skip (the model named nothing concrete to build from).
+    if (!backing.length) continue;
+    for (const sid of arr(r.supersedes)) { mentioned.add(sid); standaloneSupersede.push(sid); }
+    const primary = primaryOf(backing);
+    const spec = {
+      title: primary.title, type: primary.type, prose: primary.prose,
+      centrality: r.centrality, cluster: r.cluster || primary.cluster,
+      tags: unionTags(backing), entities: unionEntities(backing),
+    };
+    stageNew(spec, scope, audFromBacking, citation, takenIds, pool, byId, audit);
+  }
+
+  // conservative default-keep: existing scope nodes the model never mentioned stay UNCHANGED (logged, not dropped).
+  for (const n of existing) if (!mentioned.has(n.id) && !n.frontmatter.superseded) audit.unmentioned.push({ scope, id: n.id });
+
+  // explicit/standalone supersedes, through the MEM-9 guard (high-centrality → HOLD).
+  for (const id of [...new Set(standaloneSupersede)]) stageSupersede(byId.get(id), audit);
+}
+
+// ---- staging helpers (mutate `pool`/node objects + `audit` in place; the writer commits the pool) ----
+// assemble + stage a brand-new node. `spec` is reconciler-assembled from the backing candidates (decisions-only
+// output, MEM-27 compact amendment): title/type/prose from the primary candidate, tags/entities unioned across all.
+function stageNew(spec, scope, audience, citation, takenIds, pool, byId, audit) {
+  const claim = citation ? 'fact' : 'inference';
+  const id = uniqueId(spec.title, takenIds);
+  const node = {
+    id,
+    frontmatter: {
+      id, title: spec.title, type: ['knowledge', 'identity', 'feedback'].includes(spec.type) ? spec.type : 'knowledge',
+      claim, scope, audience,
+      centrality: clamp01(spec.centrality), cluster: spec.cluster || 'unclustered',
+      tags: arr(spec.tags), entities: ent(spec.entities),
+      ...(citation ? { citation } : {}),
+      schema_version: 1, created: nowISO(), updated: nowISO(), last_synced: nowISO(),
+    },
+    body: bodyWithLinks(spec.prose, spec.links),
+    prose: spec.prose,
+  };
+  pool.push(node);
+  byId.set(id, node);
+  audit.added.push({ id, title: node.frontmatter.title, claim, type: node.frontmatter.type });
+}
+
+// rewrite an existing node's METADATA from a consolidation "update" — its PROSE stays unchanged (decisions-only;
+// the distiller owns prose). centrality = LLM cross-evidence judgment (MEM-27); tags/entities fold in `spec`'s
+// backing union. Citation is PRESERVED (derived → existing → absorbed), never silently dropped. On a guard trip the
+// whole update (and its absorbs) is HELD — the dup stays live for the next pass rather than risking data loss.
+function stageUpdate(existing, spec, citation, audFromBacking, supersedeIds, byId, audit) {
+  const absorbed = supersedeIds.map((id) => byId.get(id)).filter((n) => n && n.id !== existing.id);
+  const before = { centrality: existing.frontmatter.centrality || 0, cluster: existing.frontmatter.cluster, hadCitation: !!existing.frontmatter.citation };
+  const newCentrality = clamp01(spec.centrality != null ? spec.centrality : existing.frontmatter.centrality);
+  const newCluster = spec.cluster || existing.frontmatter.cluster || 'unclustered';
+  const newCitation = citation || existing.frontmatter.citation || absorbed.map((a) => a.frontmatter.citation).find(Boolean) || null;
+  const newClaim = newCitation ? 'fact' : 'inference';
+  const reasons = instabilityReasons(before, { centrality: newCentrality, cluster: newCluster, hasCitation: !!newCitation, claim: newClaim });
+  if (reasons.length) {
+    audit.held.push({ id: `${existing.id}--update-${sha8(existing.prose)}`, reasons,
+      payload: `# HELD update to [[${existing.id}]]\nreasons: ${reasons.join(', ')}\nwould absorb: ${supersedeIds.join(', ') || '(none)'}\n\n## existing (prose unchanged; metadata update held)\n${existing.prose}\n` });
+    return;
+  }
+  const audienceUnion = [existing.frontmatter.audience, audFromBacking, ...absorbed.map((a) => a.frontmatter.audience)].includes('operator') ? 'operator' : 'builder';
+  existing.frontmatter.centrality = newCentrality;
+  existing.frontmatter.cluster = newCluster;
+  existing.frontmatter.audience = audienceUnion;
+  existing.frontmatter.tags = [...new Set([...(existing.frontmatter.tags || []), ...arr(spec.tags)])];
+  existing.frontmatter.entities = mergeEntities(existing.frontmatter.entities, spec.entities);
+  if (newCitation) { existing.frontmatter.citation = newCitation; existing.frontmatter.claim = 'fact'; }
+  else existing.frontmatter.claim = 'inference';
+  existing.frontmatter.updated = nowISO();
+  existing.frontmatter.last_synced = nowISO();
+  audit.modified.push({ id: existing.id, title: existing.frontmatter.title });
+  for (const a of absorbed) stageSupersede(a, audit);   // mark the absorbed dups not-current (guarded)
+}
+
+function stageSupersede(node, audit) {
+  if (!node || node.frontmatter.superseded) return;
+  // MEM-9 guard: superseding a high-centrality node destabilizes the always-load layer → HOLD for review.
+  if ((node.frontmatter.centrality || 0) >= GUARD_HIGH_CENTRALITY) {
+    audit.held.push({ id: `${node.id}--supersede`, reasons: ['high-centrality-supersede'],
+      payload: `# HELD supersede of [[${node.id}]] (centrality ${node.frontmatter.centrality})\nConsolidation marked this node not-current; held because it is high-centrality.\n\n## prose\n${node.prose}\n` });
+    return;
+  }
+  node.frontmatter.superseded = true;
+  node.frontmatter.updated = nowISO();
+  audit.superseded.push({ id: node.id, title: node.frontmatter.title });
 }
 
 // ============================================================ INDEX.md regeneration (§6a.3/§7)
@@ -215,6 +445,7 @@ async function gitCommit(message, paths) {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const reflect = args.includes('--reflect');
   const scopeArg = args.includes('--scope') ? args[args.indexOf('--scope') + 1] : null;
   const scopes = scopeArg ? [scopeArg] : LIVE_SCOPES;
 
@@ -223,8 +454,8 @@ async function main() {
     const state = await loadState();
     state.consumed ||= {};
 
-    // ---- read all unconsumed staging across scopes ----
-    const work = [];   // { scope, file, anchor, transcript, newTurns, turnIndex, digest, totalTurns }
+    // ---- read all unconsumed staging, grouped by scope ----
+    const workByScope = {};   // scope -> [ { scope, file, anchor, transcript, brain, turnIndex, digest, totalTurns } ]
     for (const scope of scopes) {
       for (const file of await stagingFiles(scope)) {
         const parsed = parseStaging(await readFile(file, 'utf8'));
@@ -233,66 +464,57 @@ async function main() {
         const newTurns = parsed.turns.slice(consumed);
         const { digest, turnIndex } = buildDigest(newTurns);
         if (!digest.trim()) { state.consumed[file] = parsed.turns.length; continue; } // only noise -> mark consumed
-        work.push({ scope, file, anchor: parsed.anchor, transcript: parsed.transcript, brain: parsed.brain,
-          turnIndex, digest, totalTurns: parsed.turns.length, consumed });
+        (workByScope[scope] ||= []).push({ scope, file, anchor: parsed.anchor, transcript: parsed.transcript,
+          brain: parsed.brain, turnIndex, digest, totalTurns: parsed.turns.length });
       }
     }
-    if (!work.length) {
-      console.log('reconcile: no new staging to process.');
+
+    const pool = await loadPool();
+    // scopes to process: those with new staging; --reflect adds every live scope that already has nodes.
+    const scopeSet = new Set(Object.keys(workByScope));
+    if (reflect) for (const s of scopes) if (pool.some((n) => n.frontmatter.scope === s)) scopeSet.add(s);
+
+    if (!scopeSet.size) {
+      console.log(`reconcile: no new staging to process${reflect ? ' and no existing nodes to reflect on' : ''}.`);
       // still project the existing pool into CLAUDE.md (MEM-20) — damping makes it a no-op if unchanged.
-      printProjection(await project(await loadPool(), { dryRun }), dryRun);
+      printProjection(await project(pool, { dryRun }), dryRun);
       return;
     }
 
-    // ---- load pool + embedding cache ----
-    const pool = await loadPool();
-    const cache = await new EmbeddingCache(CACHE_FILE).load();
-    await syncCache(pool, cache);
-    const poolEntries = () => pool.map((n) => ({ id: n.id, vec: cache.get(n.id, contentHash(n.prose)) })).filter((e) => e.vec);
+    const cache = await new EmbeddingCache(CACHE_FILE).load();   // retrieval cache (kept warm post-commit)
     const takenIds = new Set(pool.map((n) => n.id));
     const bootstrapMode = pool.length < BOOTSTRAP_MAX_NODES;
+    const audit = { added: [], modified: [], superseded: [], held: [], unmentioned: [], scopes: {} };
 
-    const audit = { added: [], modified: [], superseded: [], held: [], scopes: {} };
+    // ---- per scope: distill all work-units -> consolidate against existing -> apply ----
+    for (const scope of [...scopeSet].sort()) {
+      const work = workByScope[scope] || [];
 
-    // ---- per work-unit: distill -> dedup -> stage writes ----
-    for (const w of work) {
-      let proposals;
-      try { proposals = await judge(distillPrompt(w.scope, w.digest), { tier: 'hard', json: true }); }
-      catch (e) { console.error(`reconcile: distill failed for ${basename(w.file)} (${e.message}); skipping.`); continue; }
-      if (!Array.isArray(proposals)) { console.error(`reconcile: non-array distill for ${basename(w.file)}; skipping.`); continue; }
-      audit.scopes[w.scope] = (audit.scopes[w.scope] || 0) + proposals.length;
-
-      // audience (B4): brain stamp is per-file (sessions are single-brain) -> audience is per work-unit,
-      // independent of any p.scope override. Hermes-origin staging mints operator nodes; default builder.
-      const audience = w.brain === 'hermes' ? 'operator' : 'builder';
-
-      for (const p of proposals) {
-        if (!p || !p.prose || !p.title) continue;
-        const scope = p.scope || w.scope;
-
-        // citation (grey-area-1): first backing turn -> stg:<anchor>:<sha8(turn-text)>, else inference.
-        let citation;
-        for (const ref of (p.source_turns || [])) {
-          const i = String(ref).replace(/[^\d]/g, '');
-          if (w.turnIndex[i]) { citation = `stg:${w.anchor}:${sha8(w.turnIndex[i])}`; break; }
+      // distill each work-unit (hard tier, MEM-18 altitude); attach the work-unit for provenance.
+      const proposals = [];
+      for (const w of work) {
+        let distilled;
+        try { distilled = await judge(distillPrompt(scope, w.digest), { tier: 'hard', json: true, timeoutMs: DISTILL_TIMEOUT_MS }); }
+        catch (e) { console.error(`reconcile: distill failed for ${basename(w.file)} (${e.message}); skipping.`); continue; }
+        if (!Array.isArray(distilled)) { console.error(`reconcile: non-array distill for ${basename(w.file)}; skipping.`); continue; }
+        for (const p of distilled) {
+          if (!p || !p.prose || !p.title) continue;
+          proposals.push({ ...p, idx: proposals.length, _wu: w });
         }
-        const claim = citation ? 'fact' : 'inference';
+      }
+      const existingInScope = pool.filter((n) => n.frontmatter.scope === scope && !n.frontmatter.superseded);
+      audit.scopes[scope] = { distilled: proposals.length, existing: existingInScope.length };
 
-        // embed proposal + find nearest existing node
-        const [pv] = await embed([p.prose]);
-        const near = cosineTopK(pv, poolEntries(), 1)[0];
-        let action = 'new', mergedProse = null;
-        if (near && near.score >= SIM_MERGE) {
-          const existing = pool.find((n) => n.id === near.id);
-          try {
-            const d = await judge(mergePrompt({ ...p, scope }, existing), { tier: 'bulk', json: true });
-            action = ['merge', 'supersede', 'new'].includes(d?.action) ? d.action : 'new';
-            mergedProse = d?.prose || null;
-          } catch { action = 'new'; }
-          if (action === 'merge') { stageMerge(existing, p, mergedProse, scope, audience, claim, citation, audit, cache, pv); continue; }
-          if (action === 'supersede') { stageSupersede(existing, audit); /* fall through to mint the new node */ }
-        }
-        stageNew(p, scope, audience, claim, citation, takenIds, pool, audit, cache, w.anchor, pv);
+      if (!proposals.length && !reflect) continue;                  // normal run, nothing new survived distill
+      if (!proposals.length && existingInScope.length < 2) continue; // reflect: <2 existing -> no dup to fold
+
+      // consolidate (size-triggered grouping; one group = whole scope at our scale)
+      for (const g of groupForConsolidation(proposals, existingInScope)) {
+        if (!g.proposals.length && g.existing.length < 2) continue;
+        let result;
+        try { result = await judge(consolidatePrompt(scope, g.proposals, g.existing), { tier: 'hard', json: true, timeoutMs: CONSOLIDATE_TIMEOUT_MS }); }
+        catch (e) { console.error(`reconcile: consolidate failed for scope ${scope} (${e.message}); skipping group.`); continue; }
+        applyConsolidation(result, g.proposals, g.existing, scope, pool, takenIds, audit);
       }
     }
 
@@ -305,8 +527,8 @@ async function main() {
       return;
     }
 
-    // ---- PHASE 1: write nodes + INDEX, commit ----
-    const touched = [...audit.added, ...audit.modified, ...audit.superseded].map((x) => x.id);
+    // ---- PHASE 1: write touched nodes + INDEX, refresh retrieval cache, commit ----
+    const touched = [...new Set([...audit.added, ...audit.modified, ...audit.superseded].map((x) => x.id))];
     if (touched.length) {
       for (const n of pool) if (touched.includes(n.id)) await writeNode(n);
       await writeFile(INDEX_FILE, renderIndex(pool), 'utf8');
@@ -322,7 +544,7 @@ async function main() {
     }
 
     // ---- PHASE 2: advance consumed markers, commit (AFTER nodes are durable) ----
-    for (const w of work) state.consumed[w.file] = w.totalTurns;
+    for (const scope of Object.keys(workByScope)) for (const w of workByScope[scope]) state.consumed[w.file] = w.totalTurns;
     await saveState(state);
     await gitCommit('reconcile: advance consumed markers', ['.reconciler/state.json']);
 
@@ -336,62 +558,6 @@ async function main() {
   } finally {
     await releaseLock();
   }
-}
-
-// ---- staging helpers (mutate `pool` + `audit` in place; the writer commits the pool) ----
-function stageNew(p, scope, audience, claim, citation, takenIds, pool, audit, cache, anchor, pv) {
-  const id = uniqueId(p.title, takenIds);
-  const node = {
-    id,
-    frontmatter: {
-      id, title: p.title, type: ['knowledge', 'identity', 'feedback'].includes(p.type) ? p.type : 'knowledge',
-      claim, scope, audience,
-      centrality: clamp01(p.centrality), cluster: p.cluster || 'unclustered',
-      tags: arr(p.tags), entities: ent(p.entities),
-      ...(citation ? { citation } : {}),
-      schema_version: 1, created: nowISO(), updated: nowISO(), last_synced: nowISO(),
-    },
-    body: bodyWithLinks(p.prose, p.links),
-    prose: p.prose,
-  };
-  pool.push(node);
-  if (pv) cache.set(id, contentHash(p.prose), pv);   // so later same-run proposals can dedup against it
-  audit.added.push({ id, title: p.title, claim, type: node.frontmatter.type });
-}
-
-function stageMerge(existing, p, mergedProse, scope, audience, claim, citation, audit, cache, pv) {
-  const before = { centrality: existing.frontmatter.centrality || 0, cluster: existing.frontmatter.cluster, hadCitation: !!existing.frontmatter.citation };
-  const newProse = mergedProse || existing.prose;
-  const newCentrality = clamp01(Math.max(existing.frontmatter.centrality || 0, p.centrality || 0));
-  const newCluster = existing.frontmatter.cluster || p.cluster || 'unclustered';
-  // instability guard (MEM-9): hold the rewrite if it destabilizes
-  const reasons = instabilityReasons(
-    { centrality: before.centrality, cluster: before.cluster, hadCitation: before.hadCitation },
-    { centrality: newCentrality, cluster: newCluster, hasCitation: !!citation, claim },
-  );
-  if (reasons.length) {
-    audit.held.push({ id: `${existing.id}--merge-${sha8(p.prose)}`, reasons,
-      payload: `# HELD merge into [[${existing.id}]]\nreasons: ${reasons.join(', ')}\n\n## existing\n${existing.prose}\n\n## proposed\n${p.prose}\n` });
-    return;
-  }
-  existing.body = bodyWithLinks(newProse, p.links);
-  existing.prose = newProse;
-  existing.frontmatter.centrality = newCentrality;
-  existing.frontmatter.cluster = newCluster;
-  // audience (B4, GA3): any operator provenance on a merged span -> operator; pre-B4 node (no audience) = builder.
-  existing.frontmatter.audience = (existing.frontmatter.audience === 'operator' || audience === 'operator') ? 'operator' : 'builder';
-  existing.frontmatter.tags = [...new Set([...(existing.frontmatter.tags || []), ...arr(p.tags)])];
-  if (citation && !existing.frontmatter.citation) { existing.frontmatter.citation = citation; existing.frontmatter.claim = 'fact'; }
-  existing.frontmatter.updated = nowISO();
-  existing.frontmatter.last_synced = nowISO();
-  audit.modified.push({ id: existing.id, title: existing.frontmatter.title });
-}
-
-function stageSupersede(existing, audit) {
-  if (existing.frontmatter.superseded) return;
-  existing.frontmatter.superseded = true;
-  existing.frontmatter.updated = nowISO();
-  audit.superseded.push({ id: existing.id, title: existing.frontmatter.title });
 }
 
 // ---- small pure helpers ----
@@ -409,6 +575,15 @@ export function instabilityReasons(before, after) {
 const clamp01 = (x) => Math.max(0, Math.min(1, Number(x) || 0));
 const arr = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
 const ent = (e) => ({ concepts: arr(e?.concepts), people: arr(e?.people), products: arr(e?.products) });
+function mergeEntities(a, b) {
+  const u = (x, y) => [...new Set([...arr(x), ...arr(y)])];
+  return { concepts: u(a?.concepts, b?.concepts), people: u(a?.people, b?.people), products: u(a?.products, b?.products) };
+}
+// node-assembly helpers (MEM-27 compact amendment): fold a node's metadata from its backing distill candidates.
+const unionTags = (props) => [...new Set(props.flatMap((p) => arr(p.tags)))];
+const unionEntities = (props) => props.reduce((acc, p) => mergeEntities(acc, p.entities), {});
+// primary backing candidate = highest centrality, tie → lowest idx; sources the new node's title/type/prose.
+const primaryOf = (props) => [...props].sort((a, b) => (clamp01(b.centrality) - clamp01(a.centrality)) || (a.idx - b.idx))[0];
 function bodyWithLinks(prose, links) {
   // strip any [[ ]] the model already added, dedup, then wrap once.
   const l = [...new Set(arr(links).map((x) => String(x).replace(/[[\]]/g, '').trim()).filter(Boolean))];
@@ -417,8 +592,9 @@ function bodyWithLinks(prose, links) {
 
 function printAudit(a, dryRun, bootstrapMode) {
   console.log(`\n=== reconcile audit ${dryRun ? '(dry-run)' : ''} ===`);
-  console.log(`mode: ${bootstrapMode ? 'bootstrap (append-only, no heavy recompute)' : 'steady'}`);
-  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  held: ${a.held.length}`);
+  console.log(`mode: ${bootstrapMode ? 'bootstrap (append-only floor)' : 'steady'}`);
+  for (const [s, c] of Object.entries(a.scopes)) console.log(`scope ${s}: ${c.distilled} distilled candidate(s) vs ${c.existing} existing node(s)`);
+  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  held: ${a.held.length}  kept-untouched: ${a.unmentioned.length}`);
   for (const x of a.added) console.log(`  + [${x.type}/${x.claim}] ${x.id} — ${x.title}`);
   for (const x of a.modified) console.log(`  ~ ${x.id} — ${x.title}`);
   for (const x of a.superseded) console.log(`  » ${x.id} — ${x.title}`);
@@ -430,7 +606,8 @@ function auditMarkdown(a) {
     + sec('Added', a.added, (x) => `- [${x.type}/${x.claim}] [[${x.id}]] — ${x.title}`)
     + sec('Modified', a.modified, (x) => `- [[${x.id}]] — ${x.title}`)
     + sec('Superseded', a.superseded, (x) => `- [[${x.id}]] — ${x.title}`)
-    + sec('Held (instability guard)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}`);
+    + sec('Held (instability guard)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}`)
+    + sec('Kept untouched (not mentioned by consolidator)', a.unmentioned, (x) => `- [[${x.id}]] (${x.scope})`);
 }
 
 // Run ONLY when invoked directly — importing this module must never trigger a real reconcile run.
