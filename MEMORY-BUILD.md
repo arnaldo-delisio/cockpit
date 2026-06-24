@@ -182,9 +182,11 @@ bridge wired. This is **execution, not design**.
       `hermes hooks list` shows ✓). Hermes now writes to `cockpit` staging on `on_session_end` (per-turn,
       incremental). **Out-of-repo → `bootstrap.sh` must reproduce the config entry**; editing `hermes-capture.mjs`
       later needs **re-consent** (allowlist records script mtime; `hermes hooks doctor` flags drift).
-- [ ] B2 Salvage remainder (BUILD-3): Hermes memory subsystem (`memory_store.db` + `memories/USER.md` ONLY —
-      **NO `MEMORY.md` on disk**, corrected) + VERIFY the live CLAUDE.md merge chain (cwd→`/`, native to Claude
-      Code now — likely a verify, not a build). Flag the native-memory disable as cut-last (don't execute).
+- [x] B2 Salvage remainder (BUILD-3) — **DONE 2026-06-24 (verify+decide+flag, no file mutation).** Native Hermes
+      memory (`memory_store.db` = 4 boringscale facts, all trust-0.5/retrieval-0; `memories/USER.md` = 1 autonomy-pref
+      line) → **DISCARD, user-confirmed (MEM-15 clean-start)**; nothing carried. Files left **INERT** (writer-disable
+      `memory_enabled:false` = cut-last, TOOL-6, **flagged not executed**). boringscale-staging wipe = **no-op** (absent).
+      CLAUDE.md merge chain **VERIFIED** (`~/CLAUDE.md` loader → `shells/CLAUDE.md`). **BUILD-3 salvage CLOSED.**
 - [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); symlink stale
       `~/.hermes/SOUL.md` → it (loader follows symlinks; SOUL **can't** `@`-import). **BLOCKER (verified against
       source, 2026-06-24 — now RESOLVED + committed):** `hermes -z … --ignore-rules` DOES load SOUL — the flag is
@@ -321,6 +323,14 @@ bridge wired. This is **execution, not design**.
   construction** — no `bootstrap.sh` entry needed (better than symlinking the real config, which would drag in
   the B1 hook); only external precondition is `~/.hermes/auth.json` (a Hermes-setup given). DECISIONS.md
   untouched — rides into the **MEM-25 amendment** after B1–B4 validate. Files: `memory-engine/judge.mjs`.
+
+- **2026-06-24 — Phase 5 B2: native Hermes memory discarded (clean-start), BUILD-3 salvage CLOSED.** Read
+  `~/.hermes/memory_store.db` read-only — **4 facts + 4 entities, ALL boringscale**, all trust 0.5 / retrieval 0;
+  `memories/USER.md` = one autonomy-pref line. **User-confirmed discard-all** (MEM-15; fact #4 — OpenRouter/DeepSeek/
+  Gemini helper models — also off-doctrine per TOOL-3). Files left **inert**; the writer-disable (`memory_enabled:false`)
+  is **cut-last** (TOOL-6, flagged not executed). boringscale staging dir **absent** → wipe a no-op (stale handoff
+  assumption). Merge chain **verified** (`~/CLAUDE.md` loader → `shells/CLAUDE.md`; native cwd→`/` merge). **Nothing
+  minted into the graph.** B2 = a verify+decide+flag checkpoint, no file mutation. Next: B3.
 
 ## Current position
 
