@@ -53,8 +53,9 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 - `~/back-in-time/` is **archived**, not active — never treat as live.
 - Never delete a real client/venture repo.
 
-<!-- managed:reconciler:begin schema=1 inputs=1ac2a361 -->
+<!-- managed:reconciler:begin schema=2 inputs=4648515b -->
 ## Rules (projected from memory — do not edit; edit the source node)
-- When asked for judgment, recommend a path and act; don’t just list options. [[advise-dont-just-list-options]]
-- Before freezing decisions, run adversarial review and verify subagent claims against files. [[verify-before-freezing-cross-family-adversarial-panel]]
+### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
+- When asked for judgment, recommend a path with reasoning and act; don’t just list options. [[advise-dont-just-list-options]]
+- Before canonicalizing decisions, run an adversarial completeness review; use a different model family where stakes justify it. [[verify-before-freezing-cross-family-adversarial-panel]]
 <!-- managed:reconciler:end -->
