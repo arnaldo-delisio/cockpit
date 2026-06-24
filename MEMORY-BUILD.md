@@ -169,16 +169,19 @@ bridge wired. This is **execution, not design**.
       intentionally dropped; old native files left INERT at `~/.claude/projects/-home-arn--cockpit/memory/`.
 
 **B. Hermes integration push (ONE batch — memory side + identity side together):**
-- [~] B1 Bridge Hermes as a staging WRITER (TOOL-6) — **CODE DONE + VALIDATED, ACTIVATION PENDING (2026-06-24).**
+- [x] B1 Bridge Hermes as a staging WRITER (TOOL-6) — **CODE DONE + VALIDATED + ACTIVATED (2026-06-24).**
       Shared-core seam shipped (decision 3): `capture-core.mjs` (brain-neutral pipeline: scope gate, salience,
       cursor, staging frontmatter + `brain:` stamp, append, fail-safe log) + thin readers `capture.mjs` (Claude
       transcript JSONL) + `hermes-capture.mjs` (Hermes `state.db` via built-in `node:sqlite`, read-only, no new
       dep). Dry-run-validated: Claude path **A/B byte-identical** to the pre-refactor capture (2.2MB / 640+
       entries; only the intended `brain:` line differs); Hermes path gate-skips unmapped cwd (paperclip
       protection holds for Hermes), captures real user+assistant prose, structural tool-error tag, idempotent
-      re-fire; no residue. **Still needed to FIRE (out-of-repo, → `bootstrap.sh`):** `config.yaml`
-      `hooks: on_session_end:` entry + a one-time TTY consent (writes `~/.hermes/shell-hooks-allowlist.json`,
-      covers CLI + gateway). Dormant until approved.
+      re-fire; no residue. **ACTIVATED (2026-06-24):** `~/.hermes/config.yaml` `hooks: on_session_end:` entry
+      added (absolute path, `timeout: 30`; `hooks_auto_accept: false` kept) + one-time TTY consent approved
+      (`approved_at 2026-06-24T11:34:56Z`; allowlist `~/.hermes/shell-hooks-allowlist.json` covers CLI + gateway;
+      `hermes hooks list` shows ✓). Hermes now writes to `cockpit` staging on `on_session_end` (per-turn,
+      incremental). **Out-of-repo → `bootstrap.sh` must reproduce the config entry**; editing `hermes-capture.mjs`
+      later needs **re-consent** (allowlist records script mtime; `hermes hooks doctor` flags drift).
 - [ ] B2 Salvage remainder (BUILD-3): Hermes memory subsystem (`memory_store.db` + `memories/USER.md` ONLY —
       **NO `MEMORY.md` on disk**, corrected) + VERIFY the live CLAUDE.md merge chain (cwd→`/`, native to Claude
       Code now — likely a verify, not a build). Flag the native-memory disable as cut-last (don't execute).
@@ -298,7 +301,7 @@ bridge wired. This is **execution, not design**.
 
 ## Current position
 
-**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) CODE DONE + VALIDATED, activation pending.**
+**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) DONE + ACTIVATED — next is B2 (salvage + merge-chain verify), then B3 (SOUL shell, gated on the judge.mjs SOUL-free HERMES_HOME fix), then B4 (audience-axis projection to SOUL).**
 Substrate bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine
 run end-to-end, the reconciler projects behavioral nodes into scope-routed CLAUDE.md, and the Claude-side
 cutover off native auto-memory is complete.
