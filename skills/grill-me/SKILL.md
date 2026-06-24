@@ -50,8 +50,10 @@ graph writer and distills the staging into discovery nodes — exactly like any 
    - If the human **can't answer**, record it as an **open-flag** (step 4) and move on — don't stall.
 4. **Checkpoint each answer immediately.** Append the Q and the human's answer to the checkpoint in the
    format below. A "couldn't answer" becomes `**A:** [open-flag] <what's unresolved / why>` and ALSO goes
-   under the `## Open flags` section. Open-flags are the deliberate human-facing output (MEM-28) — they
-   stay human-facing (checkpoint + your end report); they are NOT staged as knowledge.
+   under the `## Open flags` section. Open-flags are the deliberate human-facing output (MEM-28): they are
+   NOT staged as knowledge, but the reconciler sweeps the `## Open flags` section into its
+   `pending-review/open-flags-<scope>.md` escalation queue on the next run (resolve one by deleting its
+   bullet from the checkpoint — the next reconcile drops it from the queue).
 5. **Flush to staging** (periodically for safety, and at the end). Idempotent — re-running only appends new
    pairs (capture's cursor):
    ```

@@ -516,6 +516,58 @@ async function gitCommit(message, paths) {
   catch (e) { if (!/nothing to commit/i.test(e.stderr || e.stdout || '')) throw e; }
 }
 
+// ============================================================ grill-me open-flags sweep (DESIGN §8 mode 3)
+// grill-me writes ONLY to staging; the reconciler (sole writer of pending-review/) surfaces its human-facing
+// "couldn't answer" flags from the interview checkpoints (staging/.grill/*.md) into the escalation queue.
+// Open-flags are GAPS, not facts — they never become nodes (the checkpoints live in the dot-dir the distiller
+// already ignores). Idempotent: each scope's queue file is regenerated from the CURRENT `## Open flags`
+// sections, so resolving a flag (removing its bullet from the source checkpoint) drops it here next run.
+const RE_OPENFLAG_HEADING = /^##\s+open[ -]?flags?\s*$/i;
+function extractOpenFlags(md) {
+  const lines = md.split('\n');
+  const start = lines.findIndex((l) => RE_OPENFLAG_HEADING.test(l));
+  if (start === -1) return [];
+  const flags = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) break;                          // next section heading ends the block
+    const m = lines[i].match(/^\s*[-*]\s+(.*\S)\s*$/);          // a bullet line
+    if (m) flags.push(m[1].trim());
+  }
+  return flags;
+}
+
+async function sweepGrillOpenFlags(scopes, dryRun) {
+  let changed = false;
+  for (const scope of scopes) {
+    const grillDir = resolve(MEMORY_ROOT, 'scopes', scope, 'staging', '.grill');
+    let files;
+    try { files = (await readdir(grillDir)).filter((f) => f.endsWith('.md')); }
+    catch { continue; }                                          // no interviews in this scope
+    const seen = new Set(); const flags = [];
+    for (const f of files.sort()) {
+      for (const text of extractOpenFlags(await readFile(resolve(grillDir, f), 'utf8'))) {
+        const key = text.toLowerCase().replace(/\s+/g, ' ');
+        if (!seen.has(key)) { seen.add(key); flags.push({ text, from: f }); }
+      }
+    }
+    const outFile = resolve(PENDING_DIR, `open-flags-${scope}.md`);
+    if (!flags.length) {                                         // all resolved -> drop a stale queue file
+      if (!dryRun) { try { await unlink(outFile); changed = true; } catch { /* nothing to drop */ } }
+      continue;
+    }
+    console.log(`open-flags: ${scope} -> ${flags.length} flag(s)${dryRun ? ' (dry-run, not written)' : ''}`);
+    if (dryRun) continue;
+    await mkdir(PENDING_DIR, { recursive: true });
+    await writeFile(outFile,
+      `# Open flags — ${scope} (human-escalation queue)\n`
+      + `_Reconciler-generated from grill-me checkpoints (staging/.grill/*.md). Resolve a flag by removing\n`
+      + `its bullet from the source checkpoint; the next reconcile drops it here. (DESIGN §8 mode 3 / MEM-28.)_\n\n`
+      + flags.map((x) => `- ${x.text}  ·  _from ${x.from}_`).join('\n') + '\n', 'utf8');
+    changed = true;
+  }
+  if (changed && !dryRun) await gitCommit('reconcile: refresh grill-me open-flags queue', ['.reconciler/pending-review/']);
+}
+
 // ============================================================ main pipeline
 async function main() {
   const args = process.argv.slice(2);
@@ -529,6 +581,10 @@ async function main() {
     const state = await loadState();
     state.consumed ||= {};
     state.reflect ||= {};   // per-scope fingerprints for the reflect cost-guard (skip unchanged scopes)
+
+    // grill-me open-flags -> human-escalation queue (DESIGN §8 mode 3). grill-me writes only to staging;
+    // the reconciler surfaces the flags. Independent of node processing, so it runs before any early return.
+    await sweepGrillOpenFlags(scopes, dryRun);
 
     // ---- read all unconsumed staging, grouped by scope ----
     const workByScope = {};   // scope -> [ { scope, file, anchor, transcript, brain, turnIndex, digest, totalTurns } ]
