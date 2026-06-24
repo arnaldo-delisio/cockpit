@@ -109,7 +109,7 @@ The one-line pointer in `CLAUDE.md` (`Memory scope → ~/.cockpit/memory/scopes/
 
 ### Scope definition
 
-Scope = a confidentiality and permission boundary. Examples: `global` (public/shared, no wall), `personal` (personal data, personal wall), `venture/boringscale` (venture-scoped), `client/acme` (client-confidential). Projects nest inside scopes — a new scope is created only when a new wall is needed, not for organizational convenience. This prevents scope proliferation and keeps the `scopes/` directory manageable.
+Scope = a confidentiality and permission boundary. Examples: `global` (public/shared, no wall), `personal` (personal data, personal wall), `venture/<name>` (venture-scoped), `client/acme` (client-confidential). Projects nest inside scopes — a new scope is created only when a new wall is needed, not for organizational convenience. This prevents scope proliferation and keeps the `scopes/` directory manageable.
 
 ### Vault rule (topology-independent)
 

@@ -48,7 +48,7 @@ The graph is navigable via `[[ ]]` wikilinks (Obsidian-compatible). The flat phy
 
 **Decision:** index memory on TYPE (identity / knowledge / log) × SCOPE (global · per-venture · per-client · personal; projects nest under a venture or client).
 
-**The original error** was treating memory as a single-axis list of named slots (e.g., "persona", "project context", "tool guidelines", "client notes"). This conflates two orthogonal dimensions: *what kind of thing is this* with *whose context does it belong to*. The result is a flat bag that cannot express "this is identity-type knowledge about the boringscale venture" vs "this is factual knowledge relevant to all contexts."
+**The original error** was treating memory as a single-axis list of named slots (e.g., "persona", "project context", "tool guidelines", "client notes"). This conflates two orthogonal dimensions: *what kind of thing is this* with *whose context does it belong to*. The result is a flat bag that cannot express "this is identity-type knowledge about a given venture" vs "this is factual knowledge relevant to all contexts."
 
 **The two axes:**
 

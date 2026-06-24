@@ -17,7 +17,7 @@ This system is two distinct agents — a singular builder (Claude Code) and a fl
 
 ### What this system is
 
-A personal cockpit OS running on a laptop. It spans the full range of knowledge work: building software (boringscale, client projects), operating domains of life and work (content, job-apps, ops), and managing memory + knowledge across everything.
+A personal cockpit OS running on a laptop. It spans the full range of knowledge work: building software (ventures, client projects), operating domains of life and work (content, job-apps, ops), and managing memory + knowledge across everything.
 
 ### The two-substrate reality
 
@@ -77,7 +77,7 @@ Both are **infra only, not "personal."** They do not contain any real identity (
 
 ### Why thin is non-negotiable for `~/CLAUDE.md`
 
-Claude Code merges every `CLAUDE.md` from the current working directory up to `/`, loading all of them in every session. There is no opting out. The global `~/CLAUDE.md` therefore loads in every project session — a boringscale session, a client session, any session anywhere. If it were fat (personal opinions, stale context, project-specific rules), it would corrupt every session it touched.
+Claude Code merges every `CLAUDE.md` from the current working directory up to `/`, loading all of them in every session. There is no opting out. The global `~/CLAUDE.md` therefore loads in every project session — a venture session, a client session, any session anywhere. If it were fat (personal opinions, stale context, project-specific rules), it would corrupt every session it touched.
 
 The response is not to avoid the file (you cannot avoid it) — it is to **own it and keep it thin.** The current skeleton is ~47 lines: Identity pointer, one Orientation pointer to `STATE.md`, Build doctrine, Model routing policy, hard Guardrails. Nothing that could contaminate a project session.
 
@@ -87,11 +87,11 @@ The response is not to avoid the file (you cannot avoid it) — it is to **own i
 
 ## Identity is per-context, never global
 
-Every real identity — boringscale the venture, each client engagement, the personal self — lives as a **scoped project** under `~/projects/` (or its per-venture/per-client subdirectory). The global files carry the operator's meta-identity (`soul.md` = Hermes/Arn at global scope), not any context's identity.
+Every real identity — each venture, each client engagement, the personal self — lives as a **scoped project** under `~/projects/` (or its per-venture/per-client subdirectory). The global files carry the operator's meta-identity (`soul.md` = Hermes/Arn at global scope), not any context's identity.
 
 This follows from the two-axis memory model (TYPE × SCOPE). The global scope hosts the operator meta-identity; per-venture, per-client, and personal identities each live in their own scope. "Identity is per-context, never global" holds precisely because the global file is the *operator's* — not a context's — identity.
 
-Practical consequence: there is no such thing as a "global boringscale voice" or "global client style." Those are loaded when the session enters that project's directory, via the project's own `CLAUDE.md` and memory. The global shell knows nothing about them.
+Practical consequence: there is no such thing as a "global venture voice" or "global client style." Those are loaded when the session enters that project's directory, via the project's own `CLAUDE.md` and memory. The global shell knows nothing about them.
 
 ---
 

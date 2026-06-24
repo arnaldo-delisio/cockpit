@@ -45,7 +45,7 @@ add an analysis file + a row here. Map:
 **Clarified [2026-06-22]:** canonical content lives **in-repo** at `~/.cockpit/shells/{CLAUDE,SOUL}.md` (version-controlled + clone-clean per MEM-23). `~/CLAUDE.md` is a thin **`@`-import loader** (`@.cockpit/shells/CLAUDE.md`) — explicit + greppable; BUILD-2's @-ban targets bulky deep-dives, not relocating the thin shell itself. **`SOUL.md` can't use `@`-import** (Claude-Code-only feature; Hermes won't honor it) — so `~/SOUL.md` is a prose pointer for now, and Hermes's real load wiring is finalized at the SOUL.md dive. Kept in `shells/` — not `~/.cockpit/CLAUDE.md`, which auto-loads in cockpit-rooted sessions and is reserved for the cockpit-scope MEM-20 projection. The home loader/pointer are small artifacts `bootstrap.sh` recreates on a clone.
 
 ### OM-3 · Identity is per-context, never global  [Locked 2026-06-18]
-**Decision:** every real identity (boringscale, personal, each client) is a scoped project; the global files are the *operator's* meta-identity, not any context's.
+**Decision:** every real identity (personal, each venture, each client) is a scoped project; the global files are the *operator's* meta-identity, not any context's.
 **Depth:** memory-engine/DESIGN.md §3.
 
 ### OM-4 · Skills, not docs-about-skills  [Locked 2026-06-18]
@@ -60,7 +60,7 @@ add an analysis file + a row here. Map:
 **Why:** Claude Code merges every `CLAUDE.md` from cwd→`/` — you cannot hide from it, and the merge isn't configurable. The only stable answer is to own the file and keep it additive-not-contaminating (skeleton mechanics → BUILD-2). **Depth:** decisions/operating-model.md.
 
 ### OM-7 · Project / context placement  [Locked 2026-06-20]
-**Decision:** all contexts live under one projects root — `~/projects/<context>` — including the personal agent (`~/projects/personal`). boringscale stays flat (`~/projects/boringscale`).
+**Decision:** all contexts live under one projects root — `~/projects/<context>` — including the personal agent (`~/projects/personal`). Ventures stay flat under `~/projects/` until a per-venture split is needed (→ OPEN-7).
 **Why:** one projects root = uniform scoping + auto-load; a separate `~/personal` bought nothing. The clients/ventures sub-split is deferred to re-onboarding time (→ OPEN-7).
 
 ---
@@ -235,7 +235,7 @@ add an analysis file + a row here. Map:
 
 ### BUILD-3 · Memory salvage audit = first build step  [Locked 2026-06-21]
 **Decision:** first pass of the memory build = sweep all memory substrates (context-mode auto-memory, every native `MEMORY.md`, Hermes memory) + all `CLAUDE.md` files (live merge chain + archived). Keep deliberate keepers (re-author clean); default discard; bias to archive over delete.
-**Why:** executes MEM-15's clean-start rule. Subsumes the boringscale memory-migration item.
+**Why:** executes MEM-15's clean-start rule.
 
 ### BUILD-4 · Skills architecture  [Locked 2026-06-20]
 **Decision:** three-tier (`~/.cockpit/skills/` cross-brain shared · `~/.hermes/skills/` Hermes-only native · `~/projects/<p>/.claude/skills/` project-specific). Dual-brain bridge = Hermes `external_dirs` + Claude Code SessionStart symlink hook, wired when the first shared skill lands. Skill format = SKILL.md + YAML + Purpose + Procedure + `## Rules` (10–15 cap, reconciler-only promotion).
@@ -276,4 +276,4 @@ Live forks. When one closes, convert it to a locked entry above and link from ST
 - **OPEN-4 · Hermes↔Claude handoff interface** — the delegation/result contract is undesigned. [open since 2026-06-18]
 - **OPEN-5 · Verify-loop home** — do goal-driven verify-loops live in CLAUDE.md or the Workflows layer? Orchestration-boundary call for the CLAUDE.md dive. [2026-06-19]
 - **OPEN-6 · Model Routing mechanism** — policy is live (MR-1, OM-5); the *router* (Claude-side CCR/Codex non-Anthropic models; signals; enforcement) is unbuilt. Its own deep dive. [2026-06-19]
-- **OPEN-7 · clients/ventures folder split** — boringscale stays flat for now; rebuild the split only when re-onboarding archived contexts. [2026-06-20]
+- **OPEN-7 · clients/ventures folder split** — ventures stay flat for now; rebuild the split only when re-onboarding archived contexts. [2026-06-20]

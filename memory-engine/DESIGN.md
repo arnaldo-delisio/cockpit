@@ -259,7 +259,7 @@ No rivalry — roles assigned (MEM-15):
 - **context-mode** → **session hygiene only** (in-session context-window protection), never a store of record. Its keyword KB / auto-memory is not canonical.
 - **NotebookLM** → dropped entirely (TOOL-1).
 
-**Clean start — no legacy migration (MEM-15).** The new graph starts empty. All auto-learned memory (context-mode's auto-prefs, incidental native `MEMORY.md` entries) was made under the old/wrong setup → untrusted, discarded, not folded. Only deliberately hand-authored, currently-correct notes carry forward, by hand. The first build pass is the **salvage audit (BUILD-3)** across all memory substrates + `CLAUDE.md` files; the boringscale memory file folds into it.
+**Clean start — no legacy migration (MEM-15).** The new graph starts empty. All auto-learned memory (context-mode's auto-prefs, incidental native `MEMORY.md` entries) was made under the old/wrong setup → untrusted, discarded, not folded. Only deliberately hand-authored, currently-correct notes carry forward, by hand. The first build pass is the **salvage audit (BUILD-3)** across all memory substrates + `CLAUDE.md` files; any deliberately-kept memory file folds into it.
 
 ---
 
