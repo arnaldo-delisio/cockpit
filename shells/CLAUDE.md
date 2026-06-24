@@ -53,7 +53,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 - `~/back-in-time/` is **archived**, not active — never treat as live.
 - Never delete a real client/venture repo.
 
-<!-- managed:reconciler:begin schema=2 inputs=4648515b -->
+<!-- managed:reconciler:begin schema=2 inputs=385664f9 -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
 - When asked for judgment, recommend a path with reasoning and act; don’t just list options. [[advise-dont-just-list-options]]
