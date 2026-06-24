@@ -33,7 +33,7 @@ import { project, printProjection } from './projection.mjs';
 
 const execFileP = promisify(execFile);
 
-const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
+const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
 
 // --- tunables (grey-area picks; tune after real runs) ---
 const SIM_MERGE = 0.82;            // cosine ≥ this -> proposed node is a merge/supersede candidate

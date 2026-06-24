@@ -68,7 +68,7 @@ const HOME = homedir();
 const COCKPIT_ROOT = resolve(HOME, '.cockpit');
 const GLOBAL_SKELETON = resolve(COCKPIT_ROOT, 'shells', 'CLAUDE.md'); // canonical global builder shell (~/CLAUDE.md just imports it)
 const GLOBAL_SOUL = resolve(COCKPIT_ROOT, 'shells', 'SOUL.md');       // canonical global operator shell (~/.hermes/SOUL.md symlinks it)
-const KNOWN_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
+const KNOWN_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
 // KNOWN routes to sweep for a now-empty fence to clear: every builder scope + the global operator shell.
 const KNOWN_ROUTES = [...KNOWN_SCOPES.map((s) => [s, 'builder']), ['global', 'operator']];
 const PROJ_STATE_FILE = resolve(MEMORY_ROOT, '.reconciler', 'projection-state.json'); // committed (sibling of state.json)

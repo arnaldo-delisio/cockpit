@@ -24,7 +24,7 @@ const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));   // ~/.cockpit/memo
 const REPO_ROOT = resolve(ENGINE_DIR, '..');     // ~/.cockpit — for friendly logging only
 export const MEMORY_ROOT = resolve(REPO_ROOT, 'memory');   // private DATA repo — also imported by capture.mjs
 
-const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search'];
+const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
 const SCOPE_DIRS = ['identity', 'log', 'staging', 'sources'];
 
 const created = [];
