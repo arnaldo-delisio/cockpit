@@ -187,7 +187,10 @@ bridge wired. This is **execution, not design**.
       line) → **DISCARD, user-confirmed (MEM-15 clean-start)**; nothing carried. Files left **INERT** (writer-disable
       `memory_enabled:false` = cut-last, TOOL-6, **flagged not executed**). boringscale-staging wipe = **no-op** (absent).
       CLAUDE.md merge chain **VERIFIED** (`~/CLAUDE.md` loader → `shells/CLAUDE.md`). **BUILD-3 salvage CLOSED.**
-- [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); symlink stale
+- [x] B3 **DONE 2026-06-24** — wrote thin `shells/SOUL.md` (operator shell; hand-skeleton only, no fence — B4 adds
+      it); hard-deleted the stale `~/.hermes/SOUL.md` + `ln -sf → shells/SOUL.md`; **isolation re-verified** (live
+      judge() identity probe returned brain-neutral → the new real operator SOUL does not leak). Original task ↓.
+      Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); symlink stale
       `~/.hermes/SOUL.md` → it (loader follows symlinks; SOUL **can't** `@`-import). **BLOCKER (verified against
       source, 2026-06-24 — now RESOLVED + committed):** `hermes -z … --ignore-rules` DOES load SOUL — the flag is
       honored only in the TUI/gateway path, NOT `hermes_cli/oneshot.py` (which bypasses cli.py entirely; default
@@ -331,6 +334,16 @@ bridge wired. This is **execution, not design**.
   is **cut-last** (TOOL-6, flagged not executed). boringscale staging dir **absent** → wipe a no-op (stale handoff
   assumption). Merge chain **verified** (`~/CLAUDE.md` loader → `shells/CLAUDE.md`; native cwd→`/` merge). **Nothing
   minted into the graph.** B2 = a verify+decide+flag checkpoint, no file mutation. Next: B3.
+
+- **2026-06-24 — Phase 5 B3: operator shell written + Hermes symlinked; SOUL isolation re-verified.** Wrote thin
+  `shells/SOUL.md` (operator counterpart to the builder shell — Identity/Orientation/Operating-doctrine/Guardrails,
+  hand-skeleton only, no fence; grounded in OM-1/OM-2/MEM-23, zero boringscale). Hard-deleted the stale 75-line
+  `~/.hermes/SOUL.md` (boringscale + off-doctrine tooling + dead native-memory logging; its one generic kernel is
+  already cockpit canon) and replaced it with `ln -sf → shells/SOUL.md`. **Re-verified isolation empirically** (not
+  just trusting `a30fbc2`): RECON_HOME SOUL neutral + a live judge() identity probe returned a brain-neutral answer
+  (no operator persona) → the new REAL operator SOUL does not leak into judge() (the fix relocates HERMES_HOME, so
+  ~/.hermes/SOUL.md content is irrelevant). Omitted a model-routing section (Hermes config owns routing) + the
+  generic working-stance line (cross-brain canon). Symlink is out-of-repo → `bootstrap.sh`. Next: B4.
 
 ## Current position
 
