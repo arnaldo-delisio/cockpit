@@ -12,8 +12,9 @@
 #
 # It ALSO reproduces the OM-2 home shell wiring (clone-clean): the ~/.hermes/SOUL.md → shells/SOUL.md
 # symlink (how `hermes -z` loads the operator shell as identity slot #1) + the ~/CLAUDE.md @-import loader
-# and the ~/SOUL.md signpost. (Still tracked separately, NOT yet folded in: settings.json capture hooks,
-# the ~/.hermes config hook + autoMemory-off flags, the skills bridge — add them here once reconciled.)
+# and the ~/SOUL.md signpost; AND the Claude Code memory hooks in ~/.claude/settings.json (capture write
+# hooks + the OPEN-9 recall read hook + autoMemoryEnabled:false). (Still tracked separately, NOT yet folded
+# in: the ~/.hermes config capture hook, the skills bridge — add them here once reconciled.)
 #
 # Idempotent + clone-clean: unit files use systemd's %h specifier (no hardcoded home), every path resolves
 # relative to this script, no secrets. Safe to re-run.
@@ -65,6 +66,39 @@ install_file "$HOME/SOUL.md" '<!-- Pointer only — nothing loads this file. Her
 # Global Hermes Operator Shell — pointer
 
 Canonical: ~/.cockpit/shells/SOUL.md  (loaded by Hermes via ~/.hermes/SOUL.md → it).'
+
+# ── Claude Code memory hooks in ~/.claude/settings.json (clone-clean) ──────────────────────────────
+# settings.json lives outside any repo, so a clone has none of the memory wiring. Reproduce it here,
+# idempotently: the WRITE hooks (capture: Stop/PreCompact/SessionEnd → capture.mjs) and the READ hook
+# (recall: UserPromptSubmit → recall-hook.mjs, OPEN-9), plus autoMemoryEnabled:false (TOOL-6 — our
+# capture.mjs is the writer, not native auto-memory). A node merge preserves every other setting and
+# only appends a hook when its exact command is absent (re-run = no-op). Absolute paths (the
+# settings.json convention; ~/ would not expand inside a hook command).
+ENGINE_DIR="$ENGINE_DIR" SETTINGS="$HOME/.claude/settings.json" node <<'NODE'
+const fs = require('fs'), path = require('path');
+const engine = process.env.ENGINE_DIR, file = process.env.SETTINGS;
+let s = {};
+try { s = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* fresh */ }
+s.hooks ||= {};
+const cmd = (script) => `node "${engine}/${script}"`;
+const ensure = (event, command) => {
+  s.hooks[event] ||= [];
+  if (s.hooks[event].some((g) => (g.hooks || []).some((h) => h.command === command))) return false;
+  s.hooks[event].push({ hooks: [{ type: 'command', command }] });
+  return true;
+};
+let changed = false;
+for (const ev of ['Stop', 'PreCompact', 'SessionEnd']) changed = ensure(ev, cmd('capture.mjs')) || changed;
+changed = ensure('UserPromptSubmit', cmd('recall-hook.mjs')) || changed;      // OPEN-9 read-path
+if (s.autoMemoryEnabled !== false) { s.autoMemoryEnabled = false; changed = true; }
+if (changed) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
+  console.log('bootstrap: settings.json memory hooks ensured (' + file + ')');
+} else {
+  console.log('bootstrap: settings.json memory hooks already current');
+}
+NODE
 
 if ! command -v systemctl >/dev/null 2>&1; then
   echo "bootstrap: systemctl not found — this host has no systemd; install a cron line by hand instead." >&2

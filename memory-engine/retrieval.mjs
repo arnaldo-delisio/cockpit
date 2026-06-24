@@ -137,6 +137,18 @@ export async function search(query, nodes, cache, dir, k = 10) {
   return rrfFuse([sem, kw]).slice(0, k);
 }
 
+// semantic-only SCORED retrieval — for callers that need a relevance FLOOR (an absolute cosine
+// cutoff), which the RRF rank-fusion in search() discards. Returns [{id, score}] desc, top-k.
+// Cache-only, exactly like search(): a node whose cached vec is missing/stale is skipped (the
+// reconciler keeps the cache warm; §7 freshness). Pure reader — never mutates/saves the cache.
+export async function searchScored(query, nodes, cache, k = 10) {
+  const [qv] = await embed([query]);
+  const entries = nodes
+    .map(n => ({ id: n.id, vec: cache.get(n.id, contentHash(n.prose)) }))
+    .filter(e => e.vec);
+  return cosineTopK(qv, entries, k);
+}
+
 // Direct-run smoke test:  node retrieval.mjs            (self-contained, no corpus needed)
 //                         node retrieval.mjs "<query>"  (search the live node pool)
 const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
