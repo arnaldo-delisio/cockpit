@@ -1,165 +1,56 @@
 #!/usr/bin/env node
-// capture.mjs — dumb, fail-safe session capture (MEM-16 / MEM-22 / DESIGN §9).
+// capture.mjs — Claude-side capture reader (B1; was the whole pipeline, now a thin reader).
 //
-// Registered as a Claude Code Stop / PreCompact / SessionEnd hook. Reads the hook JSON
-// from stdin, appends NEAR-RAW, judgment-free turns to the scope's staging/, with cheap
-// MECHANICAL salience markers for the reconciler. Makes NO model call — all judgment is
-// the reconciler's (capture is dumb + comprehensive; raw is the source of truth).
+// Registered as a Claude Code Stop / PreCompact / SessionEnd hook. Reads the hook JSON from
+// stdin, turns the transcript JSONL into a normalized entries[], and hands it to the shared
+// brain-neutral pipeline (capture-core.mjs). All judgment is the reconciler's (dumb capture).
 //
-// FAIL-SAFE: every error is swallowed (logged to global staging/.capture-errors.log) and
-// the process exits 0 — capture must NEVER disrupt the session it observes (silent toward
-// the session, but it leaves a paper trail for us). See log 2026-06-23 for the rationale.
-//
-// Incremental + idempotent: a per-session cursor records how many transcript entries are
-// already captured, so Stop firing per-turn only appends what's new.
+// FAIL-SAFE: every error is swallowed (logged to global staging/.capture-errors.log) and the
+// process exits 0 — capture must NEVER disrupt the session it observes.
 
-import {
-  readFileSync, appendFileSync, existsSync, mkdirSync, writeFileSync,
-} from 'node:fs';
-import { resolve, relative, sep, dirname } from 'node:path';
-import { homedir } from 'node:os';
-import { ensureScope, MEMORY_ROOT } from './bootstrap.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+import { capture, logError } from './capture-core.mjs';
 
-// ---------- scope decision (DESIGN §9; unmapped = opt-in only, 2026-06-23) ----------
-// A session is captured ONLY if it resolves to a REAL scope. Priority:
-//   1. COCKPIT_SCOPE env  — explicit pre-launch override
-//   2. mapped cwd         — ~/projects/<x> -> <x>;  ~/.cockpit -> cockpit
-//   3. #capture opt-in    — the user typed #capture / #capture:<scope> in the session
-//   else -> null = DO NOT CAPTURE. Unmapped cwds no longer fabricate a `global` scope, so
-//   autonomous agents (Hermes, ex-paperclip) and incidental sessions in random dirs never
-//   auto-enroll into memory. This is not an engagement gate (MEM-14 forbids those) — it refuses
-//   to invent a scope where none exists; #capture is how the user supplies one when the folder can't.
-function mappedScope(cwd) {
-  const home = homedir();
-  const projects = resolve(home, 'projects');
-  if (cwd === projects || cwd.startsWith(projects + sep)) {
-    const top = relative(projects, cwd).split(sep)[0];
-    if (top) return top;                       // ~/projects/<x> -> <x>
-  }
-  const cockpit = resolve(home, '.cockpit');
-  if (cwd === cockpit || cwd.startsWith(cockpit + sep)) return 'cockpit';
-  return null;                                 // unmapped — no fabricated scope
-}
-
-// #capture / #capture:<scope> in the user's text opts an otherwise-unmapped session in.
-// Collision-free like #good/#bad (MEM-22); bare #capture -> global, #capture:<scope> -> that scope.
-const RE_CAPTURE = /(?:^|\s)#capture(?::([a-z0-9][a-z0-9-]*))?\b/i;
-function captureOptIn(userText) {
-  const m = userText.match(RE_CAPTURE);
-  return m ? (m[1] || 'global').toLowerCase() : null;
-}
-
-// ---------- salience (MEM-22): tier-1 sentinels + tier-2 regex over user text ----------
-const SENTINEL = /(^|\s)#(good|bad)\b/i;
-const RE_KEEP = /\b(remember|note this|important|keep this|don'?t forget)\b/i;
-const RE_CORRECTION = /\b(wrong|incorrect|actually|revert|undo|misunderstood|that'?s not|not what i)\b/i;
-const RE_LEADING_NO = /^\s*(no\b|nope\b|don'?t\b|stop\b)/i;
-const RE_DECISION = /\b(decided|approved|let'?s go with|green ?light|ship it|go ahead|confirmed|locked)\b/i;
-
-function userSalience(text) {
-  const f = [];
-  const m = text.match(SENTINEL); if (m) f.push('#' + m[2].toLowerCase());
-  if (RE_KEEP.test(text)) f.push('keep');
-  if (RE_CORRECTION.test(text) || RE_LEADING_NO.test(text)) f.push('correction');
-  if (RE_DECISION.test(text)) f.push('decision');
-  return f;
-}
-
-// ---------- defensive transcript parsing (formats drift — never throw) ----------
+// ---------- Claude transcript shape: content = string | block[] (formats drift — never throw) ----------
 function textOf(content) {
   if (typeof content === 'string') return content.trim();
   if (Array.isArray(content)) {
     return content
-      .filter(b => b && b.type === 'text' && typeof b.text === 'string')
-      .map(b => b.text).join('\n').trim();
+      .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text).join('\n').trim();
   }
   return '';
 }
 function hasToolError(content) {
   return Array.isArray(content)
-    && content.some(b => b && b.type === 'tool_result' && b.is_error === true);
-}
-
-// ---------- error log (silent toward the session, traceable for us) ----------
-function logError(err) {
-  try {
-    const p = resolve(MEMORY_ROOT, 'scopes', 'global', 'staging', '.capture-errors.log');
-    mkdirSync(dirname(p), { recursive: true });
-    appendFileSync(p, `${new Date().toISOString()} ${err && err.stack ? err.stack : err}\n`, 'utf8');
-  } catch { /* truly nothing we can do — stay silent */ }
+    && content.some((b) => b && b.type === 'tool_result' && b.is_error === true);
 }
 
 async function main() {
   let hook = {};
   try { hook = JSON.parse(readFileSync(0, 'utf8')); } catch { /* no/garbled stdin */ }
 
-  const cwd = hook.cwd || process.cwd();
-  const sessionId = (hook.session_id || 'unknown-session').replace(/[^a-zA-Z0-9_-]/g, '');
-  const event = hook.hook_event_name || 'Unknown';
   const tpath = hook.transcript_path;
   if (!tpath || !existsSync(tpath)) return;            // nothing to capture
 
-  // Read the transcript FIRST — scope (for unmapped cwds) can depend on its content (#capture).
+  // One normalized entry per parsed transcript line (incl. empties) so the cursor count is stable.
   const lines = readFileSync(tpath, 'utf8').split('\n').filter(Boolean);
   const entries = [];
-  for (const ln of lines) { try { entries.push(JSON.parse(ln)); } catch { /* skip bad line */ } }
-
-  // Decide scope. Unmapped + no #capture opt-in -> skip entirely (no fabricated `global`).
-  let scope = process.env.COCKPIT_SCOPE ? process.env.COCKPIT_SCOPE.trim() : mappedScope(cwd);
-  if (!scope) {
-    const userText = entries
-      .filter((e) => e.message && e.message.role === 'user')
-      .map((e) => textOf(e.message.content)).join('\n');
-    scope = captureOptIn(userText);
-    if (!scope) return;                                // not a real scope, not opted in -> don't capture
-  }
-
-  await ensureScope(scope);                            // lazily materializes dormant scopes (OPEN-7)
-
-  const stagingDir = resolve(MEMORY_ROOT, 'scopes', scope, 'staging');
-  const cursorDir = resolve(stagingDir, '.cursors');
-  const cursorFile = resolve(cursorDir, `${sessionId}.json`);
-
-  // how many transcript entries have we already captured for this session?
-  let cursor = 0;
-  try { cursor = JSON.parse(readFileSync(cursorFile, 'utf8')).count || 0; } catch { /* fresh */ }
-
-  if (entries.length <= cursor) return;                // nothing new
-
-  const fresh = entries.slice(cursor);
-  const date = new Date().toISOString().slice(0, 10);
-  const outFile = resolve(stagingDir, `${date}__${sessionId}.md`);
-
-  let out = '';
-  if (!existsSync(outFile)) {
-    out += `---\ntype: staging\nscope: ${scope}\nsession_anchor: ${sessionId}\n`
-        +  `transcript: ${tpath}\nstarted: ${new Date().toISOString()}\nschema_version: 1\n---\n\n`
-        +  `_Near-raw capture (MEM-16). Raw transcript is the source of truth (\`transcript:\` above);\n`
-        +  `huge tool outputs are not duplicated here. Salience tags are mechanical (MEM-22), not judgments._\n\n`;
-  }
-
-  let appended = 0;
-  for (const e of fresh) {
+  for (const ln of lines) {
+    let e; try { e = JSON.parse(ln); } catch { continue; }   // skip bad line
     const role = (e.message && e.message.role) || e.type || 'unknown';
     const content = e.message ? e.message.content : undefined;
-    const ts = e.timestamp || '';
-    const text = textOf(content);
-    const errored = hasToolError(content);
-    if (!text && !errored) continue;                   // mechanical noise filter (tool plumbing)
-
-    const tags = [];
-    if (role === 'user') tags.push(...userSalience(text));
-    if (errored) tags.push('error');
-    const tagStr = tags.length ? `  [${[...new Set(tags)].join(', ')}]` : '';
-
-    out += `#### ${role} · ${ts}${tagStr}\n${text || '(tool error — see transcript)'}\n\n`;
-    appended++;
+    entries.push({ role, text: textOf(content), errored: hasToolError(content), ts: e.timestamp || '' });
   }
 
-  if (appended > 0 || !existsSync(outFile)) appendFileSync(outFile, out, 'utf8');
-
-  mkdirSync(cursorDir, { recursive: true });
-  writeFileSync(cursorFile, JSON.stringify({ count: entries.length, event, updated: new Date().toISOString() }), 'utf8');
+  await capture({
+    entries,
+    cwd: hook.cwd || process.cwd(),
+    sessionId: hook.session_id,
+    event: hook.hook_event_name || 'Unknown',
+    provenance: tpath,
+    brain: 'claude',
+  });
 }
 
 main().catch(logError).finally(() => process.exit(0));

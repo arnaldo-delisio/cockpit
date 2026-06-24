@@ -169,13 +169,37 @@ bridge wired. This is **execution, not design**.
       intentionally dropped; old native files left INERT at `~/.claude/projects/-home-arn--cockpit/memory/`.
 
 **B. Hermes integration push (ONE batch — memory side + identity side together):**
-- [ ] B1 Bridge Hermes as a staging WRITER (TOOL-6); cut over Hermes LAST. (Capture is Claude-only today.)
-- [ ] B2 Salvage remainder (BUILD-3): Hermes memory subsystem + VERIFY the live CLAUDE.md merge chain
-      (cwd→`/`, native to Claude Code now — likely a verify, not a build).
-- [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); fix stale
-      `~/.hermes/SOUL.md` + load wiring (`config.yaml` — SOUL.md **can't** `@`-import, per MEM-20 clarification).
-- [ ] B4 **Open design Q — decide in this push:** does MEM-20 projection extend to SOUL.md? (Dual-brain
-      always-load symmetry — Hermes's shell currently receives NO projected behavioral nodes.)
+- [~] B1 Bridge Hermes as a staging WRITER (TOOL-6) — **CODE DONE + VALIDATED, ACTIVATION PENDING (2026-06-24).**
+      Shared-core seam shipped (decision 3): `capture-core.mjs` (brain-neutral pipeline: scope gate, salience,
+      cursor, staging frontmatter + `brain:` stamp, append, fail-safe log) + thin readers `capture.mjs` (Claude
+      transcript JSONL) + `hermes-capture.mjs` (Hermes `state.db` via built-in `node:sqlite`, read-only, no new
+      dep). Dry-run-validated: Claude path **A/B byte-identical** to the pre-refactor capture (2.2MB / 640+
+      entries; only the intended `brain:` line differs); Hermes path gate-skips unmapped cwd (paperclip
+      protection holds for Hermes), captures real user+assistant prose, structural tool-error tag, idempotent
+      re-fire; no residue. **Still needed to FIRE (out-of-repo, → `bootstrap.sh`):** `config.yaml`
+      `hooks: on_session_end:` entry + a one-time TTY consent (writes `~/.hermes/shell-hooks-allowlist.json`,
+      covers CLI + gateway). Dormant until approved.
+- [ ] B2 Salvage remainder (BUILD-3): Hermes memory subsystem (`memory_store.db` + `memories/USER.md` ONLY —
+      **NO `MEMORY.md` on disk**, corrected) + VERIFY the live CLAUDE.md merge chain (cwd→`/`, native to Claude
+      Code now — likely a verify, not a build). Flag the native-memory disable as cut-last (don't execute).
+- [ ] B3 Write the real thin `shells/SOUL.md` (operator shell, counterpart to the builder shell); symlink stale
+      `~/.hermes/SOUL.md` → it (loader follows symlinks; SOUL **can't** `@`-import). **BLOCKER (verified against
+      source, 2026-06-24):** `hermes -z … --ignore-rules` DOES load SOUL — the flag is honored only in the
+      TUI/gateway path, NOT `hermes_cli/oneshot.py` (default `skip_context_files=False` → `prompt_builder.py:1791
+      if not skip_soul:` loads it). So once SOUL is real, it injects operator identity slot #1 into EVERY
+      brain-neutral `judge()` call (breaks MEM-8/MEM-25). **Fix BEFORE symlinking:** give `judge.mjs` a dedicated
+      reconciler `HERMES_HOME` carrying config/auth but no `SOUL.md`. NOT `HERMES_HOME=/dev/null` (relocates the
+      whole home → loses Codex OAuth); NOT dropping `--ignore-rules` (never gated SOUL — no-op). Ground the
+      minimal HERMES_HOME set at B3. (Resolves the handoff's `--ignore-rules`-skips-SOUL claim: false for oneshot.)
+- [ ] B4 **Extend MEM-20 projection to the global operator shell** (in-scope BUILD, not just a decision).
+      Add `audience` to the node template (§6a.1) + mint it in the reconciler distill from the brain-stamp
+      (Hermes-origin → `operator`, default `builder`; **any-Hermes-provenance → operator** on merged spans, GA3);
+      route `global + operator → shells/SOUL.md` in `projection.mjs` `targetFor` (inherits the three-layer fence).
+      Renders EMPTY now (zero operator nodes). **GA2 limitation (recorded):** audience routing is scope-naive —
+      Hermes runs in `~/.cockpit` (scope=cockpit), and only `global`+operator routes to SOUL, so SOUL won't
+      organically fill until a scope-aware route or global Hermes runs exist; revisit when real operator nodes
+      appear. **Acceptance = a SYNTHETIC global+operator node renders into SOUL's fence** in B4's dry-run (proves
+      the axis), NOT organic fill. Defer per-project `HERMES.md` operator shells as YAGNI.
 
 **C. Tracker close-out — ONLY on the user's explicit say-so:**
 - [ ] C1 **Internalization audit:** confirm every fact in THIS file is permanently homed in STATE/DECISIONS/
@@ -256,10 +280,25 @@ bridge wired. This is **execution, not design**.
   Reconciler commits cockpit + memory only — never foreign. Global writes the canonical shell, NOT the
   `~/CLAUDE.md` pure-pointer loader. Filed → DECISIONS MEM-20 amendment + DESIGN §5/§6a.4 + the deep-dive
   Resolution section. Code: `projection.mjs` `targetFor()` + `commitFile()` (cockpit-or-memory repo only).
+- **2026-06-24 — B1 staging-writer bridge: CODE DONE + VALIDATED (activation pending).** Built the shared-core
+  seam (decision 3): `capture-core.mjs` holds the brain-neutral pipeline (scope gate, salience, cursor, staging
+  frontmatter + `brain:` stamp, append, fail-safe log); `capture.mjs` + `hermes-capture.mjs` are thin readers that
+  each normalize their own session record to `{role,text,errored,ts}[]`. Claude path proven **A/B byte-identical**
+  to the pre-refactor capture (2.2MB transcript, 640+ entries; only the intended `brain: claude` line differs).
+  Hermes path dry-run-proven: gate-skips unmapped cwd (paperclip protection holds for Hermes), reads `state.db`
+  read-only via built-in `node:sqlite` (Node v26.2.0, no new dep), captures real user+assistant prose, idempotent
+  re-fire. Build-local calls: (a) **all-rows read** `ORDER BY timestamp,id` (NOT `active=1` — the `active` flag
+  flips on compaction → count shrinks → stale cursor strands later turns; all-rows is append-monotonic + compacted
+  turns are real memory); (b) **structural tool-error** detection (parse tool JSON → `success:false`/`error`/
+  `is_error`, NOT substring — substring false-fires on legit `{"output":…}`); (c) **no `reasoning_content`
+  capture** (parity with Claude skipping thinking blocks; **possible tunable** if the reconciler later misses
+  CoT-only corrections); (d) **`brain:` in staging frontmatter** (per-file; sessions are single-brain). The
+  SOUL/`-z` BLOCKER was found here (see B3) — and it resolved a handoff contradiction: `--ignore-rules` does NOT
+  skip SOUL in the oneshot path (TUI-only). Activation (config.yaml hook + TTY consent) is the next step.
 
 ## Current position
 
-**Phases 0–4 done; Phase 5 A (Claude-side close-out) DONE — next is Phase 5 B (the batched Hermes push).**
+**Phases 0–4 done; Phase 5 A DONE; Phase 5 B1 (Hermes staging-writer bridge) CODE DONE + VALIDATED, activation pending.**
 Substrate bootstrapped, capture hooks live globally, the single-writer reconciler + MEM-24 retrieval engine
 run end-to-end, the reconciler projects behavioral nodes into scope-routed CLAUDE.md, and the Claude-side
 cutover off native auto-memory is complete.
