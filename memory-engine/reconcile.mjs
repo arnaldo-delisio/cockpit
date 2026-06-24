@@ -24,9 +24,13 @@
 //                             re-processes the same staging next run, and consolidation absorbs it.
 //   • fact needs a citation — a claim distilled from a real captured turn cites it
 //                             (stg:<anchor>:<sha8(turn-text)>); otherwise it downgrades to inference.
-//   • instability guard     — every consolidation update/supersede that drops a citation / swings
-//                             centrality / flips a high-centrality node's cluster (or supersedes a
-//                             high-centrality node) is HELD for review, never auto-committed (MEM-9).
+//   • instability guard     — narrowed (MEM-28, supersedes MEM-9's human-review default): a risky change
+//                             (citation-drop / centrality-swing / cluster-flip / supersede) only matters on an
+//                             ALWAYS-LOAD node (behavioral type, centrality ≥ projection floor); anything else
+//                             just applies (memory is git-versioned — git is the undo). For an always-load
+//                             risky change an LLM (judge) adjudicates apply-vs-escalate; only a genuine
+//                             contradiction / evidence-loss (or an adjudication failure) escalates to
+//                             pending-review. The human is NOT the default reviewer.
 //   • conservative keep     — an existing node the consolidator never mentions is kept UNCHANGED
 //                             (logged), never silently dropped.
 //
@@ -61,7 +65,10 @@ const CONSOLIDATE_TIMEOUT_MS = 300_000; // the heaviest call: whole-scope input 
                                         // DECISIONS-ONLY (ids/indices/centrality — a few KB), so the old full-prose
                                         // reply overflow is gone; budget stays generous for reasoning over a big scope.
 const GUARD_CENTRALITY_DELTA = 0.25;
-const GUARD_HIGH_CENTRALITY = 0.50;
+const GUARD_HIGH_CENTRALITY = 0.50;   // cluster-flip detector threshold inside instabilityReasons()
+const ALWAYS_LOAD_FLOOR = 0.60;       // MEM-28: mirrors projection.mjs CENTRALITY_FLOOR — only behavioral nodes
+                                      // at/above this reach the always-load layer, the one path the guard protects.
+const ADJUDICATE_TIMEOUT_MS = 60_000; // the safety-adjudicator judge() call (rare; only always-load risky changes).
 
 // --- paths ---
 const RECON_DIR = resolve(MEMORY_ROOT, '.reconciler');
@@ -287,12 +294,60 @@ function deriveCitation(backing) {
 // audience ← operator if ANY backing proposal came from a Hermes work-unit, else builder (operator∪builder=operator).
 function deriveAudience(backing) { return backing.some((p) => p._wu.brain === 'hermes') ? 'operator' : 'builder'; }
 
+// ============================================================ instability guard, narrowed (MEM-28; supersedes MEM-9 human-review)
+// The guard protects ONLY the always-load path — a behavioral node (identity/feedback) at/above the projection
+// floor, i.e. one that can reach the always-loaded CLAUDE.md/SOUL layer where a bad rule bites every session.
+// Everything else applies unguarded (memory is git-versioned; git is the undo). For an always-load risky change,
+// an LLM adjudicates apply-vs-escalate, defaulting to APPLY (reversible) and escalating only a genuine
+// contradiction / evidence-loss; an adjudication infra failure fails SAFE (escalates). The human reviews only
+// what lands in pending-review — which, by design, is now near-empty.
+export const isAlwaysLoadEligible = (node, afterCentrality = 0) =>
+  ['identity', 'feedback'].includes(node.frontmatter?.type)
+  && Math.max(node.frontmatter?.centrality || 0, afterCentrality || 0) >= ALWAYS_LOAD_FLOOR;
+
+const ADJUDICATE_SCHEMA = `Reply ONLY a JSON object: { "verdict": "apply" | "escalate", "reason": "<one short line; REQUIRED iff escalate>" }`;
+export async function adjudicate(kind, ctx, reasons) {
+  const prompt = `You are the memory reconciler's SAFETY ADJUDICATOR for an ALWAYS-LOADED behavioral rule — it \
+loads into the model in EVERY session, so a bad change is high-impact. A consolidation ${kind} to this rule \
+tripped the instability guard (${reasons.join(', ')}). Memory is git-versioned, so any change is reversible — \
+so DEFAULT TO "apply". Escalate to a human ONLY if applying would clearly: (a) contradict or corrupt the rule's \
+meaning, (b) drop real supporting evidence with no replacement, or (c) remove a still-valid load-bearing rule. \
+Cosmetic re-clustering, a modest centrality nudge, or any change that leaves the rule's TEXT intact is NOT a \
+reason to escalate — apply it.
+
+RULE [[${ctx.id}]] (centrality ${ctx.centrality ?? '?'}):
+${ctx.prose}
+
+THE PROPOSED ${kind.toUpperCase()}: ${ctx.summary}
+
+${ADJUDICATE_SCHEMA}`;
+  const got = await judge(prompt, { tier: 'hard', json: true, timeoutMs: ADJUDICATE_TIMEOUT_MS });
+  const escalate = !!(got && got.verdict === 'escalate');
+  return { escalate, reason: escalate ? (got.reason || 'adjudicator gave no reason') : null };
+}
+
+// Decide an always-load-eligible risky change. Returns 'apply' | 'held'. Side effects: escalate → audit.held;
+// any auto-applied risky change → audit.autoApplied (honest trail of what bypassed human review).
+export async function guardDecision(reasons, eligible, kind, ctx, audit) {
+  if (!reasons.length) return 'apply';                                   // not risky at all
+  if (!eligible) { audit.autoApplied.push({ id: ctx.id, kind, reasons, via: 'not-always-load' }); return 'apply'; }
+  let verdict;
+  try { verdict = await adjudicate(kind, ctx, reasons); }
+  catch (e) { verdict = { escalate: true, reason: `adjudication failed (${e.message})` }; }  // fail safe → escalate
+  if (verdict.escalate) {
+    audit.held.push({ id: `${ctx.id}--${kind}`, reasons, reason: verdict.reason, payload: ctx.escalatePayload(verdict.reason) });
+    return 'held';
+  }
+  audit.autoApplied.push({ id: ctx.id, kind, reasons, via: 'llm-approved' });
+  return 'apply';
+}
+
 // ============================================================ apply a consolidation result (MEM-27 part 2/3 + compact amendment)
 // The model returns DECISIONS ONLY; this assembles each final node from its backing candidates (new) or the
 // existing node (update) — prose is the distiller's, never the consolidator's. Mutates `pool` (+ byId) + `audit`
 // + `takenIds`. Conservative: an existing node the model never names is kept UNCHANGED (logged in
-// audit.unmentioned). Every update/supersede passes the MEM-9 instability guard.
-function applyConsolidation(result, proposals, existing, scope, pool, takenIds, audit) {
+// audit.unmentioned). Every risky update/supersede passes the narrowed guard (MEM-28: always-load → LLM-adjudicated).
+async function applyConsolidation(result, proposals, existing, scope, pool, takenIds, audit) {
   if (!Array.isArray(result)) { console.error(`reconcile: non-array consolidate for scope ${scope}; skipping group.`); return; }
   const byId = new Map(pool.map((n) => [n.id, n]));
   const propByIdx = new Map(proposals.map((p) => [p.idx, p]));
@@ -323,7 +378,7 @@ function applyConsolidation(result, proposals, existing, scope, pool, takenIds, 
       for (const sid of arr(r.supersedes)) mentioned.add(sid);    // absorbed ids: handled inside stageUpdate (only if it applies)
       // decisions-only: existing prose stays; centrality/cluster are the model's, tags/entities fold in from backing.
       const spec = { centrality: r.centrality, cluster: r.cluster, tags: unionTags(backing), entities: unionEntities(backing) };
-      stageUpdate(byId.get(r.id), spec, citation, audFromBacking, arr(r.supersedes), byId, audit);
+      await stageUpdate(byId.get(r.id), spec, citation, audFromBacking, arr(r.supersedes), byId, audit);
       continue;
     }
     // new (or update naming an unknown id → mint fresh). Assemble from the backing candidates the distiller wrote:
@@ -343,8 +398,8 @@ function applyConsolidation(result, proposals, existing, scope, pool, takenIds, 
   // conservative default-keep: existing scope nodes the model never mentioned stay UNCHANGED (logged, not dropped).
   for (const n of existing) if (!mentioned.has(n.id) && !n.frontmatter.superseded) audit.unmentioned.push({ scope, id: n.id });
 
-  // explicit/standalone supersedes, through the MEM-9 guard (high-centrality → HOLD).
-  for (const id of [...new Set(standaloneSupersede)]) stageSupersede(byId.get(id), audit);
+  // explicit/standalone supersedes, through the narrowed guard (MEM-28: always-load → LLM-adjudicated).
+  for (const id of [...new Set(standaloneSupersede)]) await stageSupersede(byId.get(id), audit);
 }
 
 // ---- staging helpers (mutate `pool`/node objects + `audit` in place; the writer commits the pool) ----
@@ -373,9 +428,10 @@ function stageNew(spec, scope, audience, citation, takenIds, pool, byId, audit) 
 
 // rewrite an existing node's METADATA from a consolidation "update" — its PROSE stays unchanged (decisions-only;
 // the distiller owns prose). centrality = LLM cross-evidence judgment (MEM-27); tags/entities fold in `spec`'s
-// backing union. Citation is PRESERVED (derived → existing → absorbed), never silently dropped. On a guard trip the
-// whole update (and its absorbs) is HELD — the dup stays live for the next pass rather than risking data loss.
-function stageUpdate(existing, spec, citation, audFromBacking, supersedeIds, byId, audit) {
+// backing union. Citation is PRESERVED (derived → existing → absorbed), never silently dropped. A risky change
+// passes the narrowed guard (MEM-28): unguarded unless this is an always-load rule, then LLM-adjudicated; only an
+// escalation HOLDS the whole update (and its absorbs) — the dup stays live for the next pass.
+async function stageUpdate(existing, spec, citation, audFromBacking, supersedeIds, byId, audit) {
   const absorbed = supersedeIds.map((id) => byId.get(id)).filter((n) => n && n.id !== existing.id);
   const before = { centrality: existing.frontmatter.centrality || 0, cluster: existing.frontmatter.cluster, hadCitation: !!existing.frontmatter.citation };
   const newCentrality = clamp01(spec.centrality != null ? spec.centrality : existing.frontmatter.centrality);
@@ -383,11 +439,13 @@ function stageUpdate(existing, spec, citation, audFromBacking, supersedeIds, byI
   const newCitation = citation || existing.frontmatter.citation || absorbed.map((a) => a.frontmatter.citation).find(Boolean) || null;
   const newClaim = newCitation ? 'fact' : 'inference';
   const reasons = instabilityReasons(before, { centrality: newCentrality, cluster: newCluster, hasCitation: !!newCitation, claim: newClaim });
-  if (reasons.length) {
-    audit.held.push({ id: `${existing.id}--update-${sha8(existing.prose)}`, reasons,
-      payload: `# HELD update to [[${existing.id}]]\nreasons: ${reasons.join(', ')}\nwould absorb: ${supersedeIds.join(', ') || '(none)'}\n\n## existing (prose unchanged; metadata update held)\n${existing.prose}\n` });
-    return;
-  }
+  const eligible = isAlwaysLoadEligible(existing, newCentrality);
+  const summary = `centrality ${before.centrality}→${newCentrality}, cluster "${before.cluster}"→"${newCluster}", `
+    + `citation ${before.hadCitation ? (newCitation ? 'kept' : 'DROPPED') : (newCitation ? 'added' : 'none')}`
+    + `${absorbed.length ? `, absorbs ${absorbed.map((a) => a.id).join(', ')}` : ''} (prose UNCHANGED)`;
+  const escalatePayload = (reason) => `# ESCALATED update to [[${existing.id}]]\nreasons: ${reasons.join(', ')}\n`
+    + `adjudicator: ${reason}\nwould absorb: ${supersedeIds.join(', ') || '(none)'}\n\n## existing (prose unchanged; metadata update held)\n${existing.prose}\n`;
+  if (await guardDecision(reasons, eligible, 'update', { id: existing.id, centrality: existing.frontmatter.centrality, prose: existing.prose, summary, escalatePayload }, audit) === 'held') return;
   const audienceUnion = [existing.frontmatter.audience, audFromBacking, ...absorbed.map((a) => a.frontmatter.audience)].includes('operator') ? 'operator' : 'builder';
   existing.frontmatter.centrality = newCentrality;
   existing.frontmatter.cluster = newCluster;
@@ -399,16 +457,20 @@ function stageUpdate(existing, spec, citation, audFromBacking, supersedeIds, byI
   existing.frontmatter.updated = nowISO();
   existing.frontmatter.last_synced = nowISO();
   audit.modified.push({ id: existing.id, title: existing.frontmatter.title });
-  for (const a of absorbed) stageSupersede(a, audit);   // mark the absorbed dups not-current (guarded)
+  for (const a of absorbed) await stageSupersede(a, audit);   // mark the absorbed dups not-current (guarded)
 }
 
-function stageSupersede(node, audit) {
+async function stageSupersede(node, audit) {
   if (!node || node.frontmatter.superseded) return;
-  // MEM-9 guard: superseding a high-centrality node destabilizes the always-load layer → HOLD for review.
-  if ((node.frontmatter.centrality || 0) >= GUARD_HIGH_CENTRALITY) {
-    audit.held.push({ id: `${node.id}--supersede`, reasons: ['high-centrality-supersede'],
-      payload: `# HELD supersede of [[${node.id}]] (centrality ${node.frontmatter.centrality})\nConsolidation marked this node not-current; held because it is high-centrality.\n\n## prose\n${node.prose}\n` });
-    return;
+  // MEM-28: removing a node only needs review when it is an always-load rule (its disappearance changes every
+  // session). Anything else — a routine dedup absorb, a low-centrality / knowledge node — just applies (git is
+  // the undo). An always-load supersede is LLM-adjudicated; only an escalation holds it for the human.
+  if (isAlwaysLoadEligible(node)) {
+    const escalatePayload = (reason) => `# ESCALATED supersede of [[${node.id}]] (centrality ${node.frontmatter.centrality})\n`
+      + `adjudicator: ${reason}\nConsolidation marked this always-load rule not-current.\n\n## prose\n${node.prose}\n`;
+    const ctx = { id: node.id, centrality: node.frontmatter.centrality, prose: node.prose,
+      summary: 'mark this rule not-current — removes it from the graph AND the always-load layer', escalatePayload };
+    if (await guardDecision(['always-load-supersede'], true, 'supersede', ctx, audit) === 'held') return;
   }
   node.frontmatter.superseded = true;
   node.frontmatter.updated = nowISO();
@@ -484,7 +546,7 @@ async function main() {
     const cache = await new EmbeddingCache(CACHE_FILE).load();   // retrieval cache (kept warm post-commit)
     const takenIds = new Set(pool.map((n) => n.id));
     const bootstrapMode = pool.length < BOOTSTRAP_MAX_NODES;
-    const audit = { added: [], modified: [], superseded: [], held: [], unmentioned: [], scopes: {} };
+    const audit = { added: [], modified: [], superseded: [], held: [], autoApplied: [], unmentioned: [], scopes: {} };
 
     // ---- per scope: distill all work-units -> consolidate against existing -> apply ----
     for (const scope of [...scopeSet].sort()) {
@@ -514,7 +576,7 @@ async function main() {
         let result;
         try { result = await judge(consolidatePrompt(scope, g.proposals, g.existing), { tier: 'hard', json: true, timeoutMs: CONSOLIDATE_TIMEOUT_MS }); }
         catch (e) { console.error(`reconcile: consolidate failed for scope ${scope} (${e.message}); skipping group.`); continue; }
-        applyConsolidation(result, g.proposals, g.existing, scope, pool, takenIds, audit);
+        await applyConsolidation(result, g.proposals, g.existing, scope, pool, takenIds, audit);
       }
     }
 
@@ -594,11 +656,12 @@ function printAudit(a, dryRun, bootstrapMode) {
   console.log(`\n=== reconcile audit ${dryRun ? '(dry-run)' : ''} ===`);
   console.log(`mode: ${bootstrapMode ? 'bootstrap (append-only floor)' : 'steady'}`);
   for (const [s, c] of Object.entries(a.scopes)) console.log(`scope ${s}: ${c.distilled} distilled candidate(s) vs ${c.existing} existing node(s)`);
-  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  held: ${a.held.length}  kept-untouched: ${a.unmentioned.length}`);
+  console.log(`added: ${a.added.length}  modified: ${a.modified.length}  superseded: ${a.superseded.length}  auto-applied(risky): ${a.autoApplied.length}  escalated: ${a.held.length}  kept-untouched: ${a.unmentioned.length}`);
   for (const x of a.added) console.log(`  + [${x.type}/${x.claim}] ${x.id} — ${x.title}`);
   for (const x of a.modified) console.log(`  ~ ${x.id} — ${x.title}`);
   for (const x of a.superseded) console.log(`  » ${x.id} — ${x.title}`);
-  for (const x of a.held) console.log(`  ⚠ HELD ${x.id} — ${x.reasons.join(', ')}`);
+  for (const x of a.autoApplied) console.log(`  ✓ auto-applied ${x.kind} ${x.id} — ${x.reasons.join(', ')} [${x.via}]`);
+  for (const x of a.held) console.log(`  ⚠ ESCALATED ${x.id} — ${x.reasons.join(', ')}${x.reason ? ` (${x.reason})` : ''}`);
 }
 function auditMarkdown(a) {
   const sec = (t, xs, f) => `## ${t} (${xs.length})\n${xs.map(f).join('\n') || '_none_'}\n\n`;
@@ -606,7 +669,8 @@ function auditMarkdown(a) {
     + sec('Added', a.added, (x) => `- [${x.type}/${x.claim}] [[${x.id}]] — ${x.title}`)
     + sec('Modified', a.modified, (x) => `- [[${x.id}]] — ${x.title}`)
     + sec('Superseded', a.superseded, (x) => `- [[${x.id}]] — ${x.title}`)
-    + sec('Held (instability guard)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}`)
+    + sec('Auto-applied risky changes (MEM-28: not-always-load or LLM-approved)', a.autoApplied, (x) => `- ${x.kind} [[${x.id}]] — ${x.reasons.join(', ')} [${x.via}]`)
+    + sec('Escalated to pending-review (always-load contradiction / evidence-loss)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}${x.reason ? ` — ${x.reason}` : ''}`)
     + sec('Kept untouched (not mentioned by consolidator)', a.unmentioned, (x) => `- [[${x.id}]] (${x.scope})`);
 }
 
