@@ -22,9 +22,8 @@ DESIGN = specs · log/ = chronology. Record in the home first, then add a pointe
 - Recommend a path and adversarially double-check important decisions before locking them in. [[global-working-rhythm-rules]]
 - Inspect live cockpit wiring before changing it; make the smallest reversible change and verify both brains when relevant. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
 - Dry-run first executions that could write, commit, or trigger side effects by import. [[first-executions-must-be-dry-run-safe]]
+- After committing in the cockpit repo, push it before leaving the work local-only. [[cockpit-commits-should-be-pushed-after-committing]]
 - Confirm cleanup scope before deleting any workspace that may contain user-created work. [[do-not-delete-real-workspaces-just-because-an-agent-touched-]]
 - Apply prior decisions by preserving their intent, not overfitting to literal wording. [[build-2-import-ban-targets-bulky-deep-dives-not-thin-shell-r]]
 - Use absolute paths in Hermes hook commands; embedded ~/ arguments do not expand reliably. [[use-absolute-paths-in-hermes-hook-commands]]
-### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
-- After committing in the cockpit repo, push it before leaving the work local-only. [[cockpit-commits-should-be-pushed-after-committing]]
 <!-- managed:reconciler:end -->
