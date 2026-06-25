@@ -19,5 +19,11 @@ memory/
 # ~/.cache/huggingface, outside the repo).
 memory-engine/node_modules/
 
+# Personal roadmap + session narrative (OSS-1 option A — keep private).
+# Public = the system; private = the data AND the personal strategy.
+# Cloners get decisions/ (the reasoning) and the code; not the live roadmap or session log.
+STATE.md
+log/
+
 # OS cruft
 .DS_Store
