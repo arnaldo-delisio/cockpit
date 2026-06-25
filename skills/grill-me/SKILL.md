@@ -48,6 +48,10 @@ graph writer and distills the staging into discovery nodes — exactly like any 
    - **Go where the value is**: identity/mission, who the scope serves, voice, durable preferences,
      non-obvious constraints, decisions-not-yet-written. Follow the thread; drill into vague answers.
    - If the human **can't answer**, record it as an **open-flag** (step 4) and move on — don't stall.
+   - **For pre-plan calibration, keep the grill targeted.** When the user is trying to freeze a build plan
+     and says some open questions remain, do not restart a broad identity interview. Ask only the unresolved
+     defaults that materially change the plan (e.g. autonomy authority, compensation bands, risk tolerance,
+     proof-point wording), checkpoint those answers, then stop and proceed to the plan.
 4. **Checkpoint each answer immediately.** Append the Q and the human's answer to the checkpoint in the
    format below. A "couldn't answer" becomes `**A:** [open-flag] <what's unresolved / why>` and ALSO goes
    under the `## Open flags` section. Open-flags are the deliberate human-facing output (MEM-28): they are
