@@ -68,9 +68,6 @@ const HOME = homedir();
 const COCKPIT_ROOT = resolve(HOME, '.cockpit');
 const GLOBAL_SKELETON = resolve(COCKPIT_ROOT, 'shells', 'CLAUDE.md'); // canonical global builder shell (~/CLAUDE.md just imports it)
 const GLOBAL_SOUL = resolve(COCKPIT_ROOT, 'shells', 'SOUL.md');       // canonical global operator shell (~/.hermes/SOUL.md symlinks it)
-const KNOWN_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
-// KNOWN routes to sweep for a now-empty fence to clear: every builder scope + the global operator shell.
-const KNOWN_ROUTES = [...KNOWN_SCOPES.map((s) => [s, 'builder']), ['global', 'operator']];
 const PROJ_STATE_FILE = resolve(MEMORY_ROOT, '.reconciler', 'projection-state.json'); // committed (sibling of state.json)
 
 const sha8 = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
@@ -219,6 +216,15 @@ export async function project(pool, { dryRun = false } = {}) {
   const globalSkeleton = await readFile(GLOBAL_SKELETON, 'utf8').catch(() => '');
   const state = await loadProjState();
 
+  // Read scopes from memory/scopes.json (same source as reconcile.mjs). Fallback to safe minimum.
+  let knownScopes = ['global', 'cockpit'];
+  try {
+    const raw = JSON.parse(await readFile(resolve(MEMORY_ROOT, 'scopes.json'), 'utf8'));
+    if (Array.isArray(raw) && raw.length) knownScopes = raw;
+  } catch { /* use defaults */ }
+  // KNOWN routes to sweep for a now-empty fence to clear: every builder scope + the global operator shell.
+  const knownRoutes = [...knownScopes.map((s) => [s, 'builder']), ['global', 'operator']];
+
   // ROUTES (B4 audience axis): the unit of projection is a (scope × audience) route, not a scope — one
   // scope (global) hosts both a builder route (→ CLAUDE.md) and an operator route (→ SOUL.md). Consider:
   // any route with behavioral candidates; any route with existing projection-state (so demotion/cleanup
@@ -233,7 +239,7 @@ export async function project(pool, { dryRun = false } = {}) {
   };
   for (const n of pool) if (isBehavioral(n)) addRoute(n.frontmatter.scope, n.frontmatter.audience || 'builder');
   for (const key of Object.keys(state)) { const [s, a] = parseRouteKey(key); addRoute(s, a); }
-  for (const [s, a] of KNOWN_ROUTES) {
+  for (const [s, a] of knownRoutes) {
     const t = await readFile(targetFor(s, a), 'utf8').catch(() => null);
     if (t && FENCE_RE.test(t)) addRoute(s, a);
   }

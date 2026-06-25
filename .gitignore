@@ -25,5 +25,8 @@ memory-engine/node_modules/
 STATE.md
 log/
 
+# Local overrides — IDE, project-specific settings, etc.
+*.local
+
 # OS cruft
 .DS_Store
