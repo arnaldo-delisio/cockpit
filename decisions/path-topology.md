@@ -119,6 +119,8 @@ The vault rule is locked independently of the topology decision: a `vault/` dire
 
 `sources/` lives beside `vault/` in each scope: `~/.cockpit/memory/scopes/<scope>/sources/`. It is the raw-capture layer — verbatim inputs (transcripts, repo snapshots, docs, pastes) that are fully frontmattered and search-indexed. Public content (`substrate:shared`) routes to `scopes/global/sources/`; confidential content routes to the relevant scope's `vault/sources/`. Sources are never invisible: everything autosaves, nothing requires a manual save step.
 
+**Curated collections — clarified 2026-06-25.** `sources/` also holds *hand-curated* living files, not just autosaved captures — e.g. `personal/sources/quotes.md` (the operator's own lines under `## Mine`, quotes they like under `## Collected`). Such files follow the same layer contract: **verbatim** (never distilled into graph nodes — the reconciler reads `staging/`, not `sources/`, so curated text stays intact); **homed in the scope they are *about*** (the operator → `personal`, regardless of where they're later used); and **referenced cross-scope, never copied** — when `content` is built it pulls voice + raw material from `personal/sources/` rather than owning a second copy (one-fact-one-home, DOC-1; cross-scope reach is first-class here). Each curated file self-documents its own entry format in its frontmatter/header.
+
 ---
 
 ## Sources
