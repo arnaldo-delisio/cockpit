@@ -15,7 +15,7 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
 
-<!-- managed:reconciler:begin schema=2 inputs=97aa282a -->
+<!-- managed:reconciler:begin schema=2 inputs=f085950f -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Verify source and subagent claims before freezing them into memory, code, or decisions. [[cockpit-reviewer-workflow]]
@@ -25,4 +25,6 @@ DESIGN = specs · log/ = chronology. Record in the home first, then add a pointe
 - Confirm cleanup scope before deleting any workspace that may contain user-created work. [[do-not-delete-real-workspaces-just-because-an-agent-touched-]]
 - Apply prior decisions by preserving their intent, not overfitting to literal wording. [[build-2-import-ban-targets-bulky-deep-dives-not-thin-shell-r]]
 - Use absolute paths in Hermes hook commands; embedded ~/ arguments do not expand reliably. [[use-absolute-paths-in-hermes-hook-commands]]
+### Emerging (volatile — promotes to Durable after 3 consecutive reconciles)
+- After committing in the cockpit repo, push it before leaving the work local-only. [[cockpit-commits-should-be-pushed-after-committing]]
 <!-- managed:reconciler:end -->
