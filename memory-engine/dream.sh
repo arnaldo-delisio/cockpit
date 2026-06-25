@@ -17,8 +17,9 @@ set -uo pipefail
 ENGINE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # ~/.cockpit/memory-engine
 LOG="$ENGINE_DIR/../memory/.reconciler/dreaming.log"           # gitignored; sits beside .reconciler/audit/
 
-# hermes (judge()'s model access) is in ~/.local/bin; node is in /usr/bin (or a version manager on PATH).
+# hermes (judge()'s model access when JUDGE_ADAPTER=hermes) is in ~/.local/bin; node is in /usr/bin.
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+export JUDGE_ADAPTER=hermes   # this install uses Hermes/Codex; cloners without Hermes omit this
 
 mkdir -p "$(dirname "$LOG")"
 
