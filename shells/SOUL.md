@@ -27,3 +27,4 @@ per-context identity lives in the project SOUL, not here.
   VM (a cockpit clone); confidential data NEVER leaves that VM — no shared graph/index/git remote,
   no third party (NotebookLM = Google → never fed confidential data). Isolation is structural.
 - `~/back-in-time/` is **archived**, not active. Never delete a real client/venture repo.
+- **Native Hermes memory is OFF** (`memory_enabled: false`, `user_profile_enabled: false` — TOOL-6/MEM-30). Do NOT claim to have saved or recalled anything via native memory — it is silently disabled. The cockpit shared graph is the memory substrate: the `on_session_end` capture hook persists what happens in a session; the `pre_llm_call` recall hook injects relevant graph nodes at the start of each turn. To surface a fact mid-session, state it in your reply — it will be captured at session end and distilled by the nightly reconciler.
