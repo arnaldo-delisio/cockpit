@@ -88,11 +88,18 @@ the tree*, never the data. Clone → run bootstrap → empty, correct substrate.
 
 ## What's deferred to OSS-polish (before publishing)
 
-- The **private data repo** + the reconciler's two-phase-commit git target (MEM-9/MEM-10) — stood
-  up at Phase 3, when the first nodes exist and need a versioned home.
-- **STATE.md / `log/` disposition** — sanitize, public-mirror, or keep private.
-- License choice, a public-facing README, example/seed data so a cloner has something to run, and a
-  full secret-scan of history before the first push.
+All items resolved 2026-06-25:
+
+- ~~**Private data repo**~~ — `memory/` initialized as standalone private git repo; `arnaldo-delisio/cockpit-memory` on GitHub (Option A: private, no encryption — no client secrets, walling is structural). Reconciler two-phase-commits to it as designed (MEM-9/MEM-10).
+- ~~**STATE.md / `log/` disposition**~~ — Option A (keep private): both gitignored + removed from all 92 commits of public history via `git filter-repo`. Local files preserved.
+- ~~**License**~~ — MIT.
+- ~~**Public README**~~ — written and committed. Covers architecture, memory engine pipeline, decisions/ goldmine, skills, and a full getting-started sequence (scopes.json, both bootstraps, private git repo init, Hermes wiring, projects, smoke test).
+- ~~**Example/seed data**~~ — demo scope seeded by `bootstrap.mjs`: 2 fictional staging files + 1 pre-baked §6a.1 node. `node reconcile.mjs --scope demo` exercises the full distill→consolidate→project pipeline without real data.
+- ~~**Secret scan**~~ — full history scan: clean (zero live credentials).
+
+**Additional polish landed during OSS pass:** `MACHINE.md` moved to `~/MACHINE.md` (machine-specific, not system doc); scopes now read from gitignored `memory/scopes.json` so private scope names never appear in the public repo.
+
+**Status: OSS-polish complete. `arnaldo-delisio/cockpit` ready to flip to public.**
 
 ---
 
