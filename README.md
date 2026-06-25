@@ -4,6 +4,18 @@ A personal operating system for two AI brains — Claude Code (builder) and Herm
 
 ---
 
+## Why
+
+Your AI tools forget everything between sessions. Worse, if you use more than one — Claude Code for building, Hermes for running agents — they forget independently, in separate silos that never talk to each other.
+
+**The native memory problem.** Both Claude Code and Hermes ship with built-in memory. Neither is the answer. Claude Code's native memory is model-decided (what gets stored is up to the model, not you), unverifiable (you can't inspect or correct it), and carries an 11–16k token overhead per session. Hermes has its own holographic store with the same problems. Two black boxes, zero cross-brain visibility.
+
+**Why two brains?** Claude Code and Hermes are genuinely different tools. Claude Code is interactive — a pair programmer in your terminal, built for building. Hermes is an agent fleet — autonomous, async, built for operating: research runs, content pipelines, job applications, ops tasks. One can't replace the other. The gap between them is where institutional memory goes to die.
+
+**The cockpit approach.** A single shared graph, owned by neither brain. Both capture into it at session boundaries. The reconciler distills raw captures into structured nodes nightly — brain-neutral, deterministic, no black boxes. Both brains recall from it automatically when a session starts. What Claude Code learns in a build session, Hermes knows the next morning. What Hermes surfaces from a research run, Claude Code sees at the start of the next coding session. The graph is plain markdown, version-controlled, and entirely yours.
+
+---
+
 ## Architecture
 
 Two brains, one memory substrate, one shared board.
@@ -39,7 +51,7 @@ A full read/write loop: both brains capture → nightly reconciler distills → 
 
 **Reconcile** — A single reconciler (`reconcile.mjs`) is the sole writer of canonical nodes. Two tempos:
 - *On-demand*: light bookkeeping pass after capture
-- *Nightly*: full distillation pass via systemd user timer (`dream.sh`, 04:00 local; `Persistent=true` for laptops). Per-scope fingerprint skips idle scopes at zero model cost.
+- *Nightly*: full distillation pass via nightly timer (`dream.sh`, 04:00 local; systemd on Linux with `Persistent=true` for laptops, launchd on macOS). Per-scope fingerprint skips idle scopes at zero model cost.
 
 Pipeline: distill staging into candidate nodes → consolidate against the existing pool (fold paraphrases, merge restatements, surface contradictions) → instability guard → two-phase commit to the private memory repo.
 
@@ -134,7 +146,7 @@ This installs:
 - `~/SOUL.md` — signpost file
 - `~/.hermes/SOUL.md` → `shells/SOUL.md` symlink (how Hermes loads the operator shell)
 - Capture and recall hooks in `~/.claude/settings.json` (`Stop`/`PreCompact`/`SessionEnd` → `capture.mjs`; `UserPromptSubmit` → `recall-hook.mjs`)
-- `cockpit-reconcile.{service,timer}` systemd user units (nightly dreaming at 04:00 local, persistent for laptops)
+- Nightly timer — systemd units on Linux (`cockpit-reconcile.{service,timer}`, persistent for laptops), launchd agent on macOS (`com.cockpit.reconcile.plist`) — fires at 04:00 local
 
 Use `bash bootstrap.sh --install-only` to write the units without enabling them yet.
 
