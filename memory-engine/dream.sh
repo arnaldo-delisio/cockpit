@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# dream.sh — the "dreaming" pass runner; the systemd user service's ExecStart (DESIGN §5/§8; STATE dreaming).
+# dream.sh — the "dreaming" pass runner; called by the nightly timer (DESIGN §5/§8; STATE dreaming).
 #
 # Thin wrapper around `node reconcile.mjs --reflect`. It exists for three unattended-run concerns the bare
 # `node` invocation can't cover (minimalism rung 6 — the minimum that actually works):
-#   1. PATH — judge() shells to `hermes`, which lives in ~/.local/bin; a systemd USER service's default PATH
+#   1. PATH — judge() shells to `hermes`, which lives in ~/.local/bin; the timer's default PATH
 #      does NOT include it, so an un-wrapped run would fail every night with "hermes: not found".
 #   2. Observability — tee stdout+stderr to a rolling log beside the audit diffs (memory/.reconciler/), so a
 #      human has one place to read the last run; systemd's journal captures the same stream independently.
@@ -14,7 +14,7 @@
 
 set -uo pipefail
 
-ENGINE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # ~/.cockpit/memory-engine
+ENGINE_DIR="$(cd "$(dirname "$0")" && pwd -P)"   # ~/.cockpit/memory-engine
 LOG="$ENGINE_DIR/../memory/.reconciler/dreaming.log"           # gitignored; sits beside .reconciler/audit/
 
 # hermes (judge()'s model access when JUDGE_ADAPTER=hermes) is in ~/.local/bin; node is in /usr/bin.
@@ -28,7 +28,7 @@ if [ -f "$LOG" ] && [ "$(wc -l < "$LOG" 2>/dev/null || echo 0)" -gt 5000 ]; then
   tail -n 2000 "$LOG" > "$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
 fi
 
-ts() { date -Is; }
+ts() { date -Is 2>/dev/null || date "+%Y-%m-%dT%H:%M:%S%z"; }   # GNU date / macOS date
 
 # Run inside a pipeline to tee; capture node's status via the explicit exit + PIPESTATUS.
 {

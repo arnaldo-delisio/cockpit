@@ -79,7 +79,7 @@ Hermes loads skills via `external_dirs` in `~/.hermes/config.yaml`. Claude Code 
 
 **Prerequisites**
 
-- Linux with systemd (the nightly dreaming pass uses a systemd user timer)
+- Linux (systemd user timer) or macOS 10.15+ (launchd user agent) — for the nightly dreaming pass
 - Claude Code subscription (builder brain)
 - Hermes subscription (operator brain; the reconciler defaults to `hermes -z` for model calls — if you're currently using OpenClaw, Hermes is the better fit here: its shell lifecycle hooks are what make capture and recall work)
 - Node.js 20+

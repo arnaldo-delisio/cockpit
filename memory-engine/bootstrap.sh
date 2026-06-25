@@ -5,10 +5,11 @@
 # wiring that lives OUTSIDE any repo and so can't be version-controlled directly. On a fresh clone you run
 # both to recreate the working setup.
 #
-# THIS iteration installs the "dreaming" pass (STATE: Memory — NEXT): a systemd USER timer that runs
+# THIS iteration installs the "dreaming" pass (STATE: Memory — NEXT): a nightly timer that runs
 #   node memory-engine/reconcile.mjs --reflect
-# nightly, off-peak, unattended (DESIGN §5/§8; MEM-16 two-tempo; MEM-25 runtime). The lockfile already
+# off-peak, unattended (DESIGN §5/§8; MEM-16 two-tempo; MEM-25 runtime). The lockfile already
 # fences it against a manual run; judge() is already brain-neutral.
+# On Linux: a systemd user timer. On macOS: a launchd user agent.
 #
 # It ALSO reproduces the OM-2 home shell wiring (clone-clean): the ~/.hermes/SOUL.md → shells/SOUL.md
 # symlink (how `hermes -z` loads the operator shell as identity slot #1) + the ~/CLAUDE.md @-import loader
@@ -16,8 +17,8 @@
 # hooks + the OPEN-9 recall read hook + autoMemoryEnabled:false). (Still tracked separately, NOT yet folded
 # in: the ~/.hermes config capture hook, the skills bridge — add them here once reconciled.)
 #
-# Idempotent + clone-clean: unit files use systemd's %h specifier (no hardcoded home), every path resolves
-# relative to this script, no secrets. Safe to re-run.
+# Idempotent + clone-clean: timer configs resolve paths from $HOME; every path resolves relative to this
+# script, no secrets. Safe to re-run.
 #
 # Usage:
 #   bootstrap.sh                 install units + enable-linger + enable --now the nightly timer (full setup)
@@ -28,10 +29,7 @@ set -euo pipefail
 INSTALL_ONLY=0
 [ "${1:-}" = "--install-only" ] && INSTALL_ONLY=1
 
-ENGINE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # ~/.cockpit/memory-engine
-UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-SERVICE="cockpit-reconcile.service"
-TIMER="cockpit-reconcile.timer"
+ENGINE_DIR="$(cd "$(dirname "$0")" && pwd -P)"   # ~/.cockpit/memory-engine
 
 # ── OM-2 home shell wiring (clone-clean; installed regardless of systemd) ─────────────────────────
 # The operator shell loads via a symlink ~/.hermes/SOUL.md → shells/SOUL.md (`hermes -z` injects it as
@@ -100,16 +98,76 @@ if (changed) {
 }
 NODE
 
-if ! command -v systemctl >/dev/null 2>&1; then
-  echo "bootstrap: systemctl not found — this host has no systemd; install a cron line by hand instead." >&2
-  exit 1
-fi
+# ── Timer installation (OS-aware) ────────────────────────────────────────────────────────────────────
+OS="$(uname -s)"
 
-mkdir -p "$UNIT_DIR"
+if [ "$OS" = "Darwin" ]; then
+  # macOS — launchd user agent (the systemd equivalent for user-space scheduled jobs).
+  # NOTE: unlike systemd's Persistent=true, launchd skips a run if the machine was asleep at fire time.
+  # Run `bash memory-engine/dream.sh` manually to catch up a missed night.
+  PLIST_LABEL="com.cockpit.reconcile"
+  PLIST_DIR="$HOME/Library/LaunchAgents"
+  PLIST_FILE="$PLIST_DIR/$PLIST_LABEL.plist"
 
-# --- the service: a oneshot that runs the dreaming reflect via the dream.sh wrapper (PATH + logging) ---
-# %h = the user's home (systemd-expanded) → clone-clean, no baked absolute path.
-cat > "$UNIT_DIR/$SERVICE" <<'UNIT'
+  mkdir -p "$PLIST_DIR"
+  # Heredoc is unquoted so $HOME/$PLIST_LABEL expand; the plist requires absolute paths.
+  cat > "$PLIST_FILE" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$PLIST_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>$HOME/.cockpit/memory-engine/dream.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>TimeoutSeconds</key>
+    <integer>1800</integer>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/.cockpit/memory/.reconciler/dreaming.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/.cockpit/memory/.reconciler/dreaming.log</string>
+</dict>
+</plist>
+PLIST
+  echo "bootstrap: wrote $PLIST_FILE"
+
+  if [ "$INSTALL_ONLY" -eq 1 ]; then
+    cat <<EOF
+bootstrap: --install-only — plist written, NOT loaded. To finish:
+    launchctl bootstrap gui/\$(id -u) $PLIST_FILE
+    launchctl print gui/\$(id -u)/$PLIST_LABEL
+EOF
+    exit 0
+  fi
+
+  # Unload any previous registration (idempotent re-run), then register the updated plist.
+  launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST_FILE"
+  echo "bootstrap: loaded $PLIST_LABEL. Fires at 04:00 local."
+  launchctl print "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null | grep -E "next event|state" || true
+
+elif command -v systemctl >/dev/null 2>&1; then
+  # Linux — systemd user timer.
+  UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  SERVICE="cockpit-reconcile.service"
+  TIMER="cockpit-reconcile.timer"
+
+  mkdir -p "$UNIT_DIR"
+
+  # %h = the user's home (systemd-expanded) → clone-clean, no baked absolute path.
+  cat > "$UNIT_DIR/$SERVICE" <<'UNIT'
 [Unit]
 Description=Cockpit memory reconciler — nightly "dreaming" reflect pass (DESIGN §5/§8)
 Documentation=file:%h/.cockpit/memory-engine/DESIGN.md
@@ -124,8 +182,7 @@ TimeoutStartSec=1800
 Nice=10
 UNIT
 
-# --- the timer: 04:00 local, off-peak (away from daytime Codex 5h-window use); Persistent for a laptop ---
-cat > "$UNIT_DIR/$TIMER" <<'UNIT'
+  cat > "$UNIT_DIR/$TIMER" <<'UNIT'
 [Unit]
 Description=Nightly trigger for the Cockpit memory "dreaming" reflect pass
 Documentation=file:%h/.cockpit/memory-engine/DESIGN.md
@@ -142,22 +199,28 @@ AccuracySec=1min
 WantedBy=timers.target
 UNIT
 
-systemctl --user daemon-reload
-echo "bootstrap: installed $SERVICE + $TIMER to $UNIT_DIR (daemon reloaded)."
+  systemctl --user daemon-reload
+  echo "bootstrap: installed $SERVICE + $TIMER to $UNIT_DIR (daemon reloaded)."
 
-if [ "$INSTALL_ONLY" -eq 1 ]; then
-  cat <<EOF
-bootstrap: --install-only — units written, NOT enabled. To finish (the reviewer-gated step):
+  if [ "$INSTALL_ONLY" -eq 1 ]; then
+    cat <<EOF
+bootstrap: --install-only — units written, NOT enabled. To finish:
     loginctl enable-linger "$USER"
     systemctl --user enable --now $TIMER
     systemctl --user list-timers $TIMER
 EOF
-  exit 0
-fi
+    exit 0
+  fi
 
-# --- full setup: linger so the timer fires while logged out, then enable the timer ---
-loginctl enable-linger "$USER"
-echo "bootstrap: enabled linger for $USER (timer fires while logged out)."
-systemctl --user enable --now "$TIMER"
-echo "bootstrap: enabled + started $TIMER. Next runs:"
-systemctl --user list-timers "$TIMER" --no-pager || true
+  loginctl enable-linger "$USER"
+  echo "bootstrap: enabled linger for $USER (timer fires while logged out)."
+  systemctl --user enable --now "$TIMER"
+  echo "bootstrap: enabled + started $TIMER. Next runs:"
+  systemctl --user list-timers "$TIMER" --no-pager || true
+
+else
+  echo "bootstrap: no systemd (Linux) or launchd (macOS) found." >&2
+  echo "  Add a cron line to run the dreaming pass nightly:" >&2
+  echo "  0 4 * * * bash $HOME/.cockpit/memory-engine/dream.sh >> $HOME/.cockpit/memory/.reconciler/dreaming.log 2>&1" >&2
+  exit 1
+fi
