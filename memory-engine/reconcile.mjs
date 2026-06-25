@@ -512,8 +512,12 @@ function renderIndex(nodes) {
 async function git(args) { return execFileP('git', ['-C', MEMORY_ROOT, ...args]); }
 async function gitCommit(message, paths) {
   await git(['add', ...paths]);
-  try { await git(['commit', '-m', message, '--quiet']); }
-  catch (e) { if (!/nothing to commit/i.test(e.stderr || e.stdout || '')) throw e; }
+  // Commit only if the scoped add actually staged something. A no-op add must skip, not fail:
+  // with unrelated changes in the tree git says "no changes added to commit" (not "nothing to
+  // commit"), which a stderr regex misses. Checking the index is locale-proof.
+  try { await git(['diff', '--cached', '--quiet']); return; } // exit 0 ⇒ nothing staged ⇒ skip
+  catch { /* non-zero ⇒ staged changes exist ⇒ proceed */ }
+  await git(['commit', '-m', message, '--quiet']);
 }
 
 // ============================================================ grill-me open-flags sweep (DESIGN §8 mode 3)
