@@ -15,7 +15,7 @@
 // ensureScope() at re-onboarding (OPEN-7) — never blanket-seeded (clean-start, MEM-15).
 // No vault/ dirs — isolation is the VM, not the graph (MEM-23).
 
-import { mkdir, writeFile, access } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,19 @@ const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));   // ~/.cockpit/memo
 const REPO_ROOT = resolve(ENGINE_DIR, '..');     // ~/.cockpit — for friendly logging only
 export const MEMORY_ROOT = resolve(REPO_ROOT, 'memory');   // private DATA repo — also imported by capture.mjs
 
-const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
+const DEFAULT_SCOPES = ['global', 'cockpit'];
+const SCOPES_FILE = resolve(MEMORY_ROOT, 'scopes.json');
 const SCOPE_DIRS = ['identity', 'log', 'staging', 'sources'];
+
+async function loadScopes() {
+  try {
+    const raw = JSON.parse(await readFile(SCOPES_FILE, 'utf8'));
+    if (Array.isArray(raw) && raw.length) return raw;
+  } catch { /* fall through to defaults */ }
+  console.log(`bootstrap: no memory/scopes.json found — using defaults ${JSON.stringify(DEFAULT_SCOPES)}.`);
+  console.log(`bootstrap: to add scopes, create memory/scopes.json, e.g.: ${JSON.stringify([...DEFAULT_SCOPES, 'my-project'])}`);
+  return DEFAULT_SCOPES;
+}
 
 const created = [];
 const rel = (p) => relative(REPO_ROOT, p);
@@ -88,6 +99,78 @@ Reconciler-generated master index: high-centrality god-nodes grouped by cluster,
 _Empty — append-only bootstrap mode until ≥1 centroid node per cluster exists (DESIGN §6a.3)._
 `;
 
+// ---- demo scope (OSS smoke-test; excluded from LIVE_SCOPES / reconcile nightly pass) ----
+// Seeded by bootstrap so a cloner can run `node reconcile.mjs --scope demo` to verify the full
+// pipeline without needing real captured data. All content is obviously fictional.
+
+const DEMO_STAGING_A = `---
+session_anchor: demo-session-a
+scope: demo
+transcript: (demo — no real transcript)
+brain: claude
+---
+
+#### user · 2026-01-15T09:00:00Z
+How should I handle the first run of a new script that writes to disk?
+
+#### assistant · 2026-01-15T09:00:10Z  [#good]
+Always run with --dry-run on the first execution of any script that writes, commits, or triggers side effects. Verify the preview output looks correct before committing to the real run. This catches path mistakes and scope bugs before they touch real data.
+
+#### user · 2026-01-15T09:01:00Z
+Makes sense. What about scripts that only read?
+
+#### assistant · 2026-01-15T09:01:08Z
+Read-only scripts are safe to run directly — they carry no write risk. The dry-run discipline applies only when the script can mutate state.
+`;
+
+const DEMO_STAGING_B = `---
+session_anchor: demo-session-b
+scope: demo
+transcript: (demo — no real transcript)
+brain: claude
+---
+
+#### user · 2026-01-15T10:30:00Z
+I prefer verbose log output during reconcile runs so I can see exactly what changed.
+
+#### assistant · 2026-01-15T10:30:12Z
+Noted. Verbose reconcile output makes the audit trail easier to follow during development. The .reconciler/audit/ file captures the same detail persistently, but console verbosity is useful while iterating.
+`;
+
+// Pre-baked node so the retrieval/recall path can be tested without running a full reconcile first.
+// Fields match §6a.1 exactly. claim: inference (no live citation); last_synced is stale until
+// `node reconcile.mjs --scope demo` warms the embedding cache.
+const DEMO_NODE = `---
+id: demo-always-prefer-dry-runs
+title: Always dry-run scripts that write or commit
+type: feedback
+claim: inference
+scope: demo
+audience: builder
+centrality: 0.7
+cluster: workflow
+tags: [dry-run, safety, workflow]
+entities:
+  concepts: [dry-run, write-safety, side-effects]
+  people: []
+  products: []
+schema_version: 1
+created: 2026-01-15T09:00:10Z
+updated: 2026-01-15T09:00:10Z
+last_synced: 2026-01-15T09:00:10Z
+---
+
+On the first execution of any script that writes to disk, commits to git, or triggers external side effects, always run with \`--dry-run\` first. Verify the preview output before committing to the real run. This catches path mistakes and scope bugs before they touch real data. Read-only scripts are safe to run directly.
+`;
+
+async function seedDemo() {
+  await ensureScope('demo');
+  const stagingDir = resolve(MEMORY_ROOT, 'scopes', 'demo', 'staging');
+  await ensureFile(resolve(stagingDir, 'demo-session-a.md'), DEMO_STAGING_A);
+  await ensureFile(resolve(stagingDir, 'demo-session-b.md'), DEMO_STAGING_B);
+  await ensureFile(resolve(MEMORY_ROOT, 'knowledge', 'nodes', 'demo-always-prefer-dry-runs.md'), DEMO_NODE);
+}
+
 export async function ensureScope(scope) {
   for (const d of SCOPE_DIRS) await ensureDir(resolve(MEMORY_ROOT, 'scopes', scope, d));
   // global's identity IS soul.md (DESIGN §3); other live scopes get a generic identity stub.
@@ -101,7 +184,9 @@ export async function ensureScope(scope) {
 async function main() {
   await ensureDir(resolve(MEMORY_ROOT, 'knowledge', 'nodes'));
   await ensureFile(resolve(MEMORY_ROOT, 'knowledge', 'INDEX.md'), INDEX);
-  for (const scope of LIVE_SCOPES) await ensureScope(scope);
+  const liveScopes = await loadScopes();
+  for (const scope of liveScopes) await ensureScope(scope);
+  await seedDemo();
 
   if (created.length === 0) {
     console.log('bootstrap: tree already complete — no changes (idempotent).');

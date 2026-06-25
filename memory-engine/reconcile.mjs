@@ -51,7 +51,16 @@ import { project, printProjection } from './projection.mjs';
 
 const execFileP = promisify(execFile);
 
-const LIVE_SCOPES = ['global', 'cockpit', 'content', 'job-search', 'boringscale'];
+const DEFAULT_SCOPES = ['global', 'cockpit'];
+
+async function loadScopes() {
+  try {
+    const raw = JSON.parse(await readFile(resolve(MEMORY_ROOT, 'scopes.json'), 'utf8'));
+    if (Array.isArray(raw) && raw.length) return raw;
+  } catch { /* fall through to defaults */ }
+  console.log(`reconcile: no memory/scopes.json — using defaults ${JSON.stringify(DEFAULT_SCOPES)}. Create it to add scopes.`);
+  return DEFAULT_SCOPES;
+}
 
 // --- tunables (grey-area picks; tune after real runs) ---
 const BOOTSTRAP_MAX_NODES = 12;      // below this, the audit prints a bootstrap-floor label (display only, §6a.3)
@@ -578,7 +587,7 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const reflect = args.includes('--reflect');
   const scopeArg = args.includes('--scope') ? args[args.indexOf('--scope') + 1] : null;
-  const scopes = scopeArg ? [scopeArg] : LIVE_SCOPES;
+  const scopes = scopeArg ? [scopeArg] : await loadScopes();
 
   if (!(await acquireLock())) process.exit(1);
   try {

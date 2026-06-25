@@ -178,17 +178,18 @@ One **idempotent** operation lays the tree (safe to re-run; creates only what's 
 ├── knowledge/
 │   ├── nodes/          # flat pool — all scopes; scope lives in frontmatter
 │   └── INDEX.md        # master index, reconciler-generated (§7 tier: hot cache → INDEX → deep wiki)
-└── scopes/
-    ├── global/{identity,log,staging,sources}/        # shared knowledge scope
-    ├── cockpit/{identity,log,staging,sources}/
-    ├── content/{identity,log,staging,sources}/
-    └── job-search/{identity,log,staging,sources}/
+├── scopes/
+│   ├── global/{identity,log,staging,sources}/        # shared knowledge scope
+│   ├── cockpit/{identity,log,staging,sources}/
+│   └── <scope>/{identity,log,staging,sources}/       # one per entry in memory/scopes.json
+└── scopes.json                                       # gitignored — private scope list (OSS-1)
 ```
 
-- **Seed set = the live scopes only** (`global, cockpit, content, job-search` — live-work-focus memory). Dormant ventures/clients are materialized by the **same idempotent function** at re-onboarding (OPEN-7) — never blanket-seeded (clean-start, MEM-15).
+- **Seed set = the live scopes** listed in `memory/scopes.json` (gitignored; falls back to `['global', 'cockpit']` when absent — bootstrap prints a hint on how to add scopes). Dormant ventures/clients are materialized by the **same idempotent function** at re-onboarding (OPEN-7) — never blanket-seeded (clean-start, MEM-15). Private scope names never appear in the public repo.
 - **No `vault/` dirs** — intra-graph walling is retired (MEM-23); the whole VM is one trust domain.
 - **`INDEX.md`** = reconciler-generated master index: high-`centrality` god-nodes grouped by `cluster`, one-line summary + `[[wikilink]]` each. Regenerated each run; never hand-edited.
 - **Append-only bootstrap mode** until ≥1 centroid node per cluster exists — the reconciler runs capture+append only (no GC, no heavy rewrite) so it doesn't thrash a near-empty graph. Seeds: `soul.md` (global identity) + a per-scope identity stub.
+- **Demo scope** (`scopes/demo/`) — seeded by bootstrap alongside the live scopes; contains 2 fictional staging files + 1 pre-baked §6a.1 node. Never in `scopes.json` → excluded from the nightly dreaming pass. Cloner verification path: `node reconcile.mjs --scope demo` (exercises the full distill→consolidate→project pipeline without real data). Delete when no longer needed.
 
 ### 6a.4 CLAUDE.md projection fence (realizes MEM-20)
 
