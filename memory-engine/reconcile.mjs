@@ -697,6 +697,18 @@ async function main() {
     // ---- audit diff artifact ----
     await mkdir(AUDIT_DIR, { recursive: true });
     await writeFile(resolve(AUDIT_DIR, `${nowISO().replace(/[:.]/g, '-')}.md`), auditMarkdown(audit), 'utf8');
+    await gitCommit('reconcile: write audit', ['.reconciler/audit/']);
+
+    // ---- sweep durable scope background files (identity/, sources/) ----
+    const allScopeDirs = await readdir(resolve(MEMORY_ROOT, 'scopes')).catch(() => []);
+    const bgPaths = [];
+    for (const s of allScopeDirs) {
+      for (const sub of ['identity', 'sources']) {
+        try { await readdir(resolve(MEMORY_ROOT, 'scopes', s, sub)); bgPaths.push(`scopes/${s}/${sub}/`); }
+        catch { /* not present */ }
+      }
+    }
+    if (bgPaths.length) await gitCommit('reconcile: commit scope background files', bgPaths);
     console.log(`\nreconcile: committed. ${touched.length} node file(s) written.`);
 
     // ---- PHASE 3: project behavioral nodes into scope-routed CLAUDE.md (MEM-20 / §6a.4) ----
