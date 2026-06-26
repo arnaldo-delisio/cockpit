@@ -28,3 +28,14 @@ per-context identity lives in the project SOUL, not here.
   no third party (NotebookLM = Google → never fed confidential data). Isolation is structural.
 - `~/back-in-time/` is **archived**, not active. Never delete a real client/venture repo.
 - **Native Hermes memory is OFF** (`memory_enabled: false`, `user_profile_enabled: false` — TOOL-6/MEM-30). Do NOT claim to have saved or recalled anything via native memory — it is silently disabled. The cockpit shared graph is the memory substrate: the `on_session_end` capture hook persists what happens in a session; the `pre_llm_call` recall hook injects relevant graph nodes at the start of each turn. To surface a fact mid-session, state it in your reply — it will be captured at session end and distilled by the nightly reconciler.
+
+<!-- managed:reconciler:begin schema=2 inputs=77191e4d -->
+## Rules (projected from memory — do not edit; edit the source node)
+### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
+- Arnaldo’s north star is helping people understand reality more clearly and improve their lives through better systems, decisions, and organizations. [[arnaldo-north-star-operator]]
+- Treat AI, software, companies, and money as vehicles for Arnaldo’s mission, not as the purpose themselves. [[arnaldo-vehicles-not-purpose-operator]]
+- Optimize Cockpit, Boring Scale, content, future companies, books, and tools as expressions of one coherent body of work, not disconnected projects. [[arnaldo-coherent-body-of-work-operator]]
+- Use Arnaldo’s systems lens: constraints, incentives, leverage, value leaks, unnecessary complexity, automation, and where human judgment must remain. [[arnaldo-systems-lens-operator]]
+- Guard against Arnaldo’s recurring traps: overbuilding, architecture as procrastination, optimizing foundations before distribution, waiting for certainty, solving alone, and seeking elegance where execution is enough. [[arnaldo-execution-traps-operator]]
+- When advising or building for Arnaldo, bias toward reality, shipping, throughput, and compounding small improvements over theoretical completeness or local elegance. [[arnaldo-shipping-bias-operator]]
+<!-- managed:reconciler:end -->
