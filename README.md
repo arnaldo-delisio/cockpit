@@ -82,6 +82,7 @@ Meaty decisions have a full-reasoning companion in `decisions/<topic>.md` — op
 **Live:**
 - `watch/` — transcribe local media, YouTube, or any yt-dlp URL; autosaves to the scope's `sources/` layer
 - `grill-me/` — one-question-at-a-time knowledge elicitation; writes to staging, never directly to the graph
+- `session-handoff/` — compact next-session / brain-switch handoff packets for context resets
 
 Hermes loads skills via `external_dirs` in `~/.hermes/config.yaml`. Claude Code loads them via a `SessionStart` hook that symlinks `~/.cockpit/skills/*` into `~/.claude/skills/`.
 
