@@ -98,9 +98,9 @@ How the reconciler turns staging into canonical nodes — **LLM-semantic consoli
    - **Compact-decisions (MEM-27 amendment):** the consolidate reply is **decisions only — NO prose** (the full-prose set overflowed the model's single-reply ceiling on a large scope: ~30 nodes × prose in one array truncates mid-array → unparseable). The reconciler **assembles** each final node: a `new` folded node takes its highest-centrality backing candidate's prose/title/type (tie → lowest idx), tags/entities unioned across all backing; an `update` keeps the existing node's prose. Prose authored only by the distiller; the consolidator judges grouping only — bounding the reply to a few KB of ids/numbers. (Chunking the scope by cluster to shrink the call is **rejected** — it scatters label-synonym dups where they never fold. Incremental neighbor-compare is **deferred** to thousand-node scale, a drop-in like MEM-24's ANN swap.)
 4. **Guard + commit:** every `update`/`supersede` passes the instability guard, **narrowed per MEM-28** — a risky change is held only when it hits an always-load-eligible node, and then the reconciler's LLM (not the human) adjudicates apply-vs-escalate; everything else applies (git is the undo). An existing node the consolidator never names is **kept unchanged** (conservative-keep). Provenance survives the merge: `citation` ← backing candidates' source-turns (`stg:<anchor>:<sha8>`, so fact-vs-inference holds), `audience` ← operator if any backing came from a Hermes work-unit (else builder), `centrality` ← the consolidator's cross-evidence number. Then two-phase commit (above) + INDEX regen + retrieval-cache sync + projection (below).
 
-**`source: dreaming` is lower-trust input here (MEM-31).** When consolidation is handed existing nodes that carry `source: dreaming` (autonomously synthesized by the visionary pass, §8 mode 2b), it treats them as **lower-trust** — never folding a real captured node *into* a dreaming node or letting a dreaming node be the authoritative survivor of a merge. This is the anti-compounding guard: it stops a hallucinated synthesis node from silently capturing real nodes on the next pass. (Build note: the consolidate prompt is handed each node's `source`.)
+**`source: dreaming` anti-compounding (deferred — only bites once synthesis exists, MEM-31 v2).** v1 produces no dreaming *nodes* (link-only), so consolidation needs no special handling yet. If synthesis is built (v2): when consolidation is handed a node with `source: dreaming`, it must treat it as **lower-trust** — never fold a real captured node *into* a dreaming node, never let a dreaming node be the authoritative survivor of a merge. This must be **enforced in code**, not just by the prompt (adversarial catch #2): the consolidate prompt is handed each node's `source`, but a deterministic post-step rejects any update that would absorb a captured node into a dreaming one.
 
-**Two tempos, one engine:** on-write (`node reconcile.mjs` — new staging consolidated against existing) and nightly (`--reflect` — consolidate a scope's existing nodes with NO new staging, self-healing accumulated drift/dups; matters more now that it rewrites existing nodes, so the guard gates it too). The visionary synthesis pass (§8 mode 2b / MEM-31) runs as a distinct phase *after* this consolidation commits, before projection — build pending. The nightly tempo is **LIVE** (MEM-29): a systemd USER timer (`cockpit-reconcile.{service,timer}`) runs `reconcile.mjs --reflect` at 04:00 local, installed clone-clean by `bootstrap.sh`/`dream.sh`; a per-scope skip-unchanged fingerprint (`state.reflect`) makes idle nights cost 0 judge calls. On-write stays manual. **Depth:** `decisions/ingestion-and-curation.md` (MEM-27) + MEM-29.
+**Two tempos, one engine:** on-write (`node reconcile.mjs` — new staging consolidated against existing) and nightly (`--reflect` — consolidate a scope's existing nodes with NO new staging, self-healing accumulated drift/dups; matters more now that it rewrites existing nodes, so the guard gates it too). The visionary association-surfacing pass (§8 mode 2b / MEM-31, **v1 link-only**) runs as a distinct phase *after* this consolidation commits, before projection — build pending. The nightly tempo is **LIVE** (MEM-29): a systemd USER timer (`cockpit-reconcile.{service,timer}`) runs `reconcile.mjs --reflect` at 04:00 local, installed clone-clean by `bootstrap.sh`/`dream.sh`; a per-scope skip-unchanged fingerprint (`state.reflect`) makes idle nights cost 0 judge calls. On-write stays manual. **Depth:** `decisions/ingestion-and-curation.md` (MEM-27) + MEM-29.
 
 ### Reconciler runtime (MEM-25)
 
@@ -154,7 +154,7 @@ entities:                   # free-form labels, reconciler-normalized
   people: [...]
   products: [...]
 citation: <stg:SESSION:SHA8 | url>  # required iff claim: fact (else reconciler downgrades to inference)
-source: capture | dreaming  # reconciler-owned provenance; default capture. `dreaming` = autonomously synthesized by the visionary pass (MEM-31) — machine-legible: consolidation treats it as LOWER-TRUST input (never authoritative backing → anti-compounding), recall/INDEX can mark it, `grep source: dreaming` audits the autonomous footprint. Auto-applied (no review queue, MEM-28); always `claim: inference` (pure synthesis has no captured-turn citation).
+source: capture | dreaming  # reconciler-owned provenance; default capture (legacy/missing reads as capture). v1 mints NO `dreaming` nodes (link-only, MEM-31). `dreaming` is reserved for the DEFERRED net-new synthesis (v2): machine-legible lower-trust marker (anti-compounding, code-enforced), `type: knowledge` only, NEVER projection-eligible, always `claim: inference`. Add `source` to the node FIELD_ORDER (adversarial catch #10). (v1's only provenance use is the `source: ported` field on `links.json` EDGES, §6a.5 — not nodes.)
 schema_version: 1
 created: <ISO8601>
 updated: <ISO8601>          # reconciler
@@ -221,7 +221,8 @@ The reconciler's managed region inside any target `CLAUDE.md`. **Three layers, t
 
 ### 6a.5 Links sidecar (realizes MEM-31 cross-linking) — build pending
 
-The cross-link surface for the visionary pass (§8 mode 2). Associations between nodes live in a
+The cross-link surface for the visionary pass (§8 mode 2b) — and in **v1 the pass's ONLY output**
+(net-new synthesis nodes are deferred, MEM-31). Associations between nodes live in a
 **reconciler-owned edge-list `knowledge/links.json`** — NOT in node bodies or frontmatter. The
 choice is load-bearing and must be wired exactly as below.
 
@@ -248,6 +249,11 @@ Agents `filling` — both store links as separate data, not in the memory's text
 - `note` is the synthesis rationale the `judge` emitted (why these two relate) — human-auditable.
 
 **Wiring (single-writer, MEM-8/9 — only the reconciler touches it):**
+- **Candidate selection (adversarial catch #7):** because the graph has ~no existing links to
+  traverse, association candidates are **semantically-proximate node pairs** (`searchScored()`
+  neighborhoods), NOT graph neighbors. Bias toward under-linked high-centrality nodes + nodes
+  recently changed; include a starvation breaker so a stable graph still gets explored once. (Exact
+  anchor count / scoring = a build-prompt tunable.)
 - **Append:** the visionary pass adds an edge only if (a) both endpoints exist and are not
   superseded, and (b) the canonical pair is not already present (so it never re-proposes an
   association already there — part of the §8/G2 saturation guard; the judge is also handed the
@@ -255,18 +261,27 @@ Agents `filling` — both store links as separate data, not in the memory's text
 - **Prune:** each run drops any edge whose endpoint id is missing or `superseded` — keeps the edge
   set consistent with the live pool (the one maintenance cost of the sidecar; runs in the pass that
   already iterates the pool).
-- **Commit boundary:** `links.json` lives under `knowledge/`, so it rides the **PHASE-1 canonical
-  commit** (`gitCommit(..., ['knowledge/'])`, §5) — the same two-phase, lockfile-fenced write as
-  the nodes. It is part of the canonical graph, not a derived cache (unlike the embedding cache,
-  which is gitignored).
+- **Commit boundary (adversarial catch #5 — must fix in code):** `links.json` lives under
+  `knowledge/`, so it rides the **PHASE-1 canonical commit** (`gitCommit(..., ['knowledge/'])`, §5)
+  — the same two-phase, lockfile-fenced write as the nodes. It is part of the canonical graph, not a
+  derived cache (unlike the embedding cache, which is gitignored). **The current PHASE-1 commit only
+  fires when `touched` (changed *nodes*) is non-empty** — a **link-only run** changes only
+  `links.json` and would otherwise never persist. The visionary build MUST extend the PHASE-1 guard
+  to commit when nodes **OR** `links.json` changed (treat node writes + INDEX + links as one
+  transaction: compute the accepted edge set, validate every endpoint against the live pool, write,
+  then commit `knowledge/`). On lock-acquire, refuse to reconcile over a **dirty canonical tree**
+  (`git status --porcelain` on `knowledge/` → recover/abort first) so a crash mid-write can't leave
+  a node without its link or a link without its endpoint.
 - **Read path:** this is the real **L4–L5 relationship/wikilink-traversal layer** (§7) the graph
   has lacked — `INDEX.md` and ambient recall (MEM-30) may traverse it to surface neighbors, and it
   is the edge-data that finally unblocks the deferred degree-centrality / community recompute
   (§6a.3) — though building that topology stays deferred until link density is real.
 
-**Net-new synthesis nodes** (the other visionary output) are ordinary `knowledge/nodes/<id>.md`
-files stamped `source: dreaming` (§6a.1) AND recorded as edges here to the nodes they synthesize
-from — so a dreaming node's provenance is both its own `source` field and its links to its evidence.
+**Net-new synthesis nodes are DEFERRED out of v1** (post-adversarial-review, MEM-31 amendment).
+v1 writes only edges (above) — no autonomous *nodes*. If synthesis is ever built (v2), each
+synthesis node is an ordinary `knowledge/nodes/<id>.md` stamped `source: dreaming` (§6a.1), `type:
+knowledge` only, **never projection-eligible**, depth-capped (≥2 non-dreaming backing), recorded as
+edges here to its evidence. Not in scope now.
 
 **One-time migration — port existing in-body links into the sidecar (run once at first visionary
 build).** Today links are scattered in node bodies as `[[ ]]` references, mostly distiller
@@ -276,13 +291,17 @@ in bodies would create a second, inconsistent link home (against DOC-1) once `li
 so they are ported, not left alone:
 1. Scan every node body for `[[target]]`.
 2. **Resolves to a live node id** → add an undirected `{a,b,source:"ported",created}` edge (canonical
-   sorted pair, deduped) and **strip the reference from the body** (the reconciler-owned `Links:`
-   suffix; the sidecar becomes the single home).
-3. **Non-resolving** (doc/decision pointer, not a node) → **drop it**, recorded in the migration
-   audit diff (never silent). External-reference backlinks are out of scope (not node→node edges).
-This is a bootstrap step, not the nightly pass — the bounded body-rewrite churn is acceptable for a
-one-time port; the steady-state pass never rewrites bodies to add links (that is the whole point of
-the sidecar). Idempotent: a second run finds no in-body `[[ ]]` left to port.
+   sorted pair, deduped). **Strip ONLY the reconciler-owned `Links:` suffix line** (adversarial catch
+   #6) — the exact `bodyWithLinks` pattern. **Inline `[[ ]]` inside the distilled prose are left as
+   plain text / untouched** (the distiller owns prose, MEM-27; rewriting it changes the embed text +
+   cache hash). Handle alias `[[id|label]]` and heading `[[id#h]]` forms; skip links inside code
+   fences.
+3. **Non-resolving** (doc/decision pointer, not a node) → **drop the suffix entry**, recorded in the
+   migration audit diff (never silent). External-reference backlinks are out of scope (not node→node).
+This is a bootstrap step, not the nightly pass — the bounded suffix-strip is acceptable for a
+one-time port; the steady-state pass never rewrites bodies (the whole point of the sidecar). It sets
+`updated` once (or a `schema_migrated` stamp) and the visionary fingerprint ignores that one
+migration revision. Idempotent: a second run finds no `Links:` suffix left to port.
 
 ---
 
@@ -309,7 +328,9 @@ the sidecar). Idempotent: a second run finds no in-body `[[ ]]` left to port.
 
    **2a. Consolidation [BUILT — MEM-27].** Reads NEW staging since last run, distills to earned depth under the MEM-18 altitude filter, then LLM-semantically **consolidates** against the existing pool (fold paraphrases / merge / supersede) and self-heals drift among existing nodes. This half is *compressive/corrective* — it dedupes and tightens; it does not connect or invent. A cheap pass first gathers the salience-flagged spans (MEM-22: errors, `#good`/`#bad`, corrections, decisions) into a digest so the expensive model judges the digest, not the raw firehose, plus a small unmarked-but-likely-salient sample so forgotten sentinels don't create blind spots. Output writes straight to canonical, gated only by the narrowed instability guard (MEM-28).
 
-   **2b. Visionary synthesis [DESIGNED — MEM-31, build pending].** The *generative/associative* half — what 2a does not do. After 2a commits the clean pool (before projection), one synthesis phase runs **cross-scope** over the whole graph and produces, links-first: (i) **cross-links** between existing nodes (→ the `knowledge/links.json` sidecar, §6a.5) and (ii) **net-new synthesis nodes** combining distant nodes. Mechanism = Generative Agents reflection: focal-point questions → per-question semantic retrieval (`searchScored()`, warm cache, no graph DB — MEM-24) → one `judge('hard')` call returns insights each citing the node-ids that back it (the citations are simultaneously the insight and its links). All autonomous output is stamped **`source: dreaming`** (`claim: inference`) and **auto-applied — no pending-review queue** (MEM-28; git is the undo). The tag is machine-legible: consolidation (2a) treats dreaming nodes as **lower-trust input** (never authoritative backing — anti-compounding); recall/INDEX can mark them. A cross-cutting synthesis node's `scope` = its backing nodes' shared scope, else `global` (MEM-2). Folded into `--reflect` with a **non-dreaming-only saturation fingerprint** (so adding dreaming nodes can't re-fire it forever); dreaming nodes are projection-eligible under the existing gates (G4). Budget: start ≤2 synthesis nodes + ≤5 links per scope per run (tunable). **Full design → MEM-31 + `decisions/visionary-dreaming.md`; sidecar → §6a.5.** *(The original spec routed all dream output to a pending-review queue at lower trust; MEM-28 retired the standing human queue, so the `source: dreaming` provenance tag + git-undo substitute for it — MEM-31.)*
+   **2b. Visionary association-surfacing [DESIGNED — MEM-31, build pending; v1 = LINK-ONLY].** The *associative* half — what 2a does not do. After 2a commits the clean pool (before projection), one pass runs **cross-scope** over the whole graph and surfaces **associations between existing nodes** → the `knowledge/links.json` sidecar (§6a.5). Mechanism: pick candidate node pairs by **semantic proximity** (`searchScored()`, warm cache, no graph DB — MEM-24; the graph has no links to traverse yet, so proximity is the candidate source), then one `judge('hard')` call per neighborhood proposes edges, each with a one-line rationale. Edges are **auto-applied — no pending-review queue** (MEM-28; grounded + reversible, git is the undo) and **touch no node bodies and no always-load layer.** Folded into `--reflect` with a saturation guard keyed on the node fingerprint **+ an edge-set hash**; budget ≤8 new links/run (tunable). A one-time migration ports the existing in-body links into the sidecar (§6a.5).
+
+   **Net-new synthesis nodes (the brain inventing new knowledge from old nodes) are DEFERRED** out of v1 after a cross-family adversarial review (Codex) found they carry nearly all the risk (autonomous guesses laundering onto the always-load layer via the projection streak-timer) and little marginal value on a ~100-node graph. The recording-vs-guess distinction is the line: capture nodes record real turns (cited, `claim: fact`); synthesis nodes manufacture inferences nobody asserted. If synthesis is ever built (v2), it is hard-constrained: `type: knowledge` only, **never projection-eligible**, `source: dreaming`/`claim: inference`, depth-capped (≥2 non-dreaming backing nodes, majority-dreaming rejected), with code-enforced anti-compounding. **Full design + the deferral trail → MEM-31 + `decisions/visionary-dreaming.md`; sidecar wiring → §6a.5.** *(The original mode-2 spec routed all dream output to a pending-review queue at lower trust; MEM-28 retired the standing human queue — for grounded edges the provenance + git-undo substitute, and the riskier synthesis half is deferred rather than queued.)*
 3. **Active elicitation ("grill me")** — pull tacit knowledge *out of the human* into the identity/knowledge layer by **relentless one-question-at-a-time interviewing** (recommend an answer per question; if the codebase can answer, look there instead of asking). Checkpoint each answer to structured markdown as you go. Output = discovery nodes + key decisions + Q&A log + **open-flags** (what the human couldn't answer). Open-flags feed the reconciler's **human-escalation queue** (§5). This is the input path for knowledge that no log or resource contains. Packaged as a skill (skills dive). Pattern source: Matt Pocock's `grill-me`.
 
 ---
@@ -362,7 +383,7 @@ No rivalry — roles assigned (MEM-15):
 - Retrieval-engine **re-sync TTLs** (triggers post-reconciler-commit).
 - `schema_version` **migration functions** (keyed `from→to`, in-repo, tested, lazy on read).
 - Reconciler **audit-diff + tombstones** (observability).
-- ~~Dreaming **token/node budget + pending-review queue**~~ — **RESOLVED 2026-06-26 → MEM-31** (visionary pass: ≤2 synthesis nodes + ≤5 links/scope/run budget; NO pending-review queue — `source: dreaming` provenance tag + git-undo substitute, MEM-28). Build pending.
+- ~~Dreaming **token/node budget + pending-review queue**~~ — **RESOLVED 2026-06-26 → MEM-31** (v1 = link-only association-surfacing: ≤8 links/run budget; NO pending-review queue — grounded edges + git-undo, MEM-28). Net-new synthesis deferred (carries the risk; descoped after the Codex adversarial review). Build pending.
 - ~~**Projection gate determinism**~~ — **RESOLVED 2026-06-23 → MEM-20 amendment + §6a.4** (three-layer fence: human skeleton + auto-graduating Durable + sticky Emerging; counter-driven promotion, deterministic node-state demotion; quorum reserved as the escalation). Built + verified end-to-end.
 - Session **heartbeat** for dead-session detection.
 - Staging **growth cap** (block + warn, never silent drop).

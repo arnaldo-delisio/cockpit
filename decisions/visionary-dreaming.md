@@ -2,7 +2,7 @@
 topic: the visionary dreaming layer — autonomous cross-graph synthesis + association-surfacing
 decisions: [MEM-31]
 relates: [MEM-17, MEM-27, MEM-28, MEM-29, MEM-20, MEM-30, MEM-24, MEM-23]
-status: locked (design) — build pending
+status: locked — v1 link-only (build pending); net-new synthesis deferred post-adversarial-review
 date: 2026-06-26
 ---
 
@@ -11,6 +11,20 @@ date: 2026-06-26
 > The generative/associative half of MEM-17 mode-2 "dreaming" that the built `--reflect`
 > pass (MEM-27/29) does **not** do. `--reflect` today consolidates (dedup / self-heal); it
 > never *connects* nodes or *infers* net-new insight. This layer adds both — links-first.
+
+> ## ⚠️ AMENDMENT [2026-06-26, post cross-family adversarial review — Codex/gpt-5.5]
+> **v1 ships LINK-ONLY. Net-new synthesis nodes are DEFERRED.** A Codex adversarial pass found the
+> synthesis half carries nearly all the risk and little marginal value on a ~100-node graph — and
+> surfaced a **critical laundering path**: projection graduates a node to the always-load Durable
+> layer on a *streak timer* (the `gateSig` damping advances the streak without re-judging while the
+> graph sits unchanged), so a single autonomous `scope: global` `feedback` guess can reach the
+> always-loaded shell in 3 nights with no corroboration — correcting this doc's earlier "the gates
+> hold" claim. **Descoping synthesis dissolved 7 of the review's 12 findings.** The body below is
+> retained as the v2 design + the reasoning trail; the **operative decision is MEM-31** (v1 =
+> association-surfacing into the `links.json` sidecar; synthesis deferred with hard guardrails:
+> `type: knowledge` only, never projection-eligible, depth-capped ≥2 non-dreaming backing,
+> code-enforced anti-compounding). The recording-vs-guess distinction is the line: capture nodes
+> record real turns (cited, `claim: fact`); synthesis nodes manufacture inferences nobody asserted.
 
 ## TL;DR
 
