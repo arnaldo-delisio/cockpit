@@ -53,7 +53,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 - `~/back-in-time/` is **archived**, not active — never treat as live.
 - Never delete a real client/venture repo.
 
-<!-- managed:reconciler:begin schema=2 inputs=e3481109 -->
+<!-- managed:reconciler:begin schema=2 inputs=de3af05b -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Arnaldo’s north star is helping people understand reality more clearly and improve their lives through better systems, decisions, and organizations. [[arnaldo-north-star-builder]]
