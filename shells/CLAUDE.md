@@ -53,9 +53,15 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 - `~/back-in-time/` is **archived**, not active — never treat as live.
 - Never delete a real client/venture repo.
 
-<!-- managed:reconciler:begin schema=2 inputs=acc93d6e -->
+<!-- managed:reconciler:begin schema=2 inputs=e3481109 -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
+- Arnaldo’s north star is helping people understand reality more clearly and improve their lives through better systems, decisions, and organizations. [[arnaldo-north-star-builder]]
+- Treat AI, software, companies, and money as vehicles for Arnaldo’s mission, not as the purpose themselves. [[arnaldo-vehicles-not-purpose-builder]]
+- Optimize Cockpit, Boring Scale, content, future companies, books, and tools as expressions of one coherent body of work, not disconnected projects. [[arnaldo-coherent-body-of-work-builder]]
+- Use Arnaldo’s systems lens: constraints, incentives, leverage, value leaks, unnecessary complexity, automation, and where human judgment must remain. [[arnaldo-systems-lens-builder]]
+- Guard against Arnaldo’s recurring traps: overbuilding, architecture as procrastination, optimizing foundations before distribution, waiting for certainty, solving alone, and seeking elegance where execution is enough. [[arnaldo-execution-traps-builder]]
+- When advising or building for Arnaldo, bias toward reality, shipping, throughput, and compounding small improvements over theoretical completeness or local elegance. [[arnaldo-shipping-bias-builder]]
 - When asked for judgment, recommend a path with reasoning and act; don’t just list options. [[advise-dont-just-list-options]]
 - Before canonicalizing decisions, run an adversarial completeness review; use a different model family where stakes justify it. [[verify-before-freezing-cross-family-adversarial-panel]]
 <!-- managed:reconciler:end -->
