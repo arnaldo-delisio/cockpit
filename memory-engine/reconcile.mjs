@@ -48,6 +48,8 @@ import { judge } from './judge.mjs';
 import { MEMORY_ROOT, INDEX_FILE, loadPool, writeNode, uniqueId } from './nodes.mjs';
 import { EmbeddingCache, syncCache } from './retrieval.mjs';
 import { project, printProjection } from './projection.mjs';
+import { loadLinks, saveLinks, prune, edgeKey } from './links.mjs';
+import { portInBodyLinks, surfaceAssociations } from './visionary.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -78,6 +80,7 @@ const GUARD_HIGH_CENTRALITY = 0.50;   // cluster-flip detector threshold inside 
 const ALWAYS_LOAD_FLOOR = 0.60;       // MEM-28: mirrors projection.mjs CENTRALITY_FLOOR — only behavioral nodes
                                       // at/above this reach the always-load layer, the one path the guard protects.
 const ADJUDICATE_TIMEOUT_MS = 60_000; // the safety-adjudicator judge() call (rare; only always-load risky changes).
+const VISIONARY_BUDGET = 8;           // MEM-31 G5: max NEW links the visionary pass adds per run (global, one cross-scope pass).
 
 // --- paths ---
 const RECON_DIR = resolve(MEMORY_ROOT, '.reconciler');
@@ -136,6 +139,20 @@ function scopeFingerprint(pool, scope) {
     .map((n) => `${n.id}:${n.frontmatter.updated || ''}`)
     .sort();
   return sha8(JSON.stringify(sig));
+}
+
+// visionary saturation guard (MEM-31 G2): the whole link pass is skipped (no judge calls) when neither
+// the live node set NOR the edge set changed since the last run — a stable real graph + stable edges ⇒
+// no new associations to find. Keyed cross-scope (one pass over the whole pool). Computed AFTER the
+// one-time migration so its updated-bump revision is absorbed (idempotent re-runs then match + skip).
+// "non-dreaming" nodes only, so future synthesis nodes (v2) couldn't re-fire it forever; v1 mints none.
+function visionarySig(pool, edges) {
+  const nodeSig = pool
+    .filter((n) => !n.frontmatter.superseded && n.frontmatter.source !== 'dreaming')
+    .map((n) => `${n.id}:${n.frontmatter.updated || ''}`)
+    .sort();
+  const edgeSig = edges.map((e) => edgeKey(e.a, e.b)).sort();
+  return sha8(JSON.stringify({ nodeSig, edgeSig }));
 }
 
 // ============================================================ staging ingestion
@@ -434,7 +451,7 @@ function stageNew(spec, scope, audience, citation, takenIds, pool, byId, audit) 
     id,
     frontmatter: {
       id, title: spec.title, type: ['knowledge', 'identity', 'feedback'].includes(spec.type) ? spec.type : 'knowledge',
-      claim, scope, audience,
+      claim, scope, audience, source: 'capture',
       centrality: clamp01(spec.centrality), cluster: spec.cluster || 'unclustered',
       tags: arr(spec.tags), entities: ent(spec.entities),
       ...(citation ? { citation } : {}),
@@ -519,6 +536,12 @@ function renderIndex(nodes) {
 
 // ============================================================ git (two-phase commit, MEM-9/12)
 async function git(args) { return execFileP('git', ['-C', MEMORY_ROOT, ...args]); }
+// MEM-31 catch #5: is the canonical knowledge/ tree dirty (uncommitted changes)? Used at lock-acquire to
+// refuse reconciling over an unknown half-written state. Tolerant: if git itself fails, treat as clean.
+async function knowledgeTreeDirty() {
+  try { const { stdout } = await git(['status', '--porcelain', '--', 'knowledge/']); return stdout.trim().length > 0; }
+  catch { return false; }
+}
 async function gitCommit(message, paths) {
   await git(['add', ...paths]);
   // Commit only if the scoped add actually staged something. A no-op add must skip, not fail:
@@ -591,9 +614,18 @@ async function main() {
 
   if (!(await acquireLock())) process.exit(1);
   try {
+    // dirty-tree recovery (MEM-31 catch #5): never reconcile over a half-written canonical tree — a crash
+    // mid-PHASE-1 could leave a node without its link or a link without its endpoint. A real run aborts so
+    // the human can inspect/recover first; a dry-run only warns (it writes nothing).
+    if (await knowledgeTreeDirty()) {
+      if (!dryRun) { console.error('reconcile: knowledge/ has uncommitted changes (a prior run may have crashed mid-write). Inspect/recover the canonical tree, then re-run. Aborting.'); return; }
+      console.error('reconcile: WARNING — knowledge/ is dirty; previewing anyway (--dry-run writes nothing).');
+    }
+
     const state = await loadState();
     state.consumed ||= {};
     state.reflect ||= {};   // per-scope fingerprints for the reflect cost-guard (skip unchanged scopes)
+    state.visionary ??= '';  // cross-scope node+edge fingerprint for the visionary saturation guard (MEM-31 G2)
 
     // grill-me open-flags -> human-escalation queue (DESIGN §8 mode 3). grill-me writes only to staging;
     // the reconciler surfaces the flags. Independent of node processing, so it runs before any early return.
@@ -629,7 +661,8 @@ async function main() {
     const cache = await new EmbeddingCache(CACHE_FILE).load();   // retrieval cache (kept warm post-commit)
     const takenIds = new Set(pool.map((n) => n.id));
     const bootstrapMode = pool.length < BOOTSTRAP_MAX_NODES;
-    const audit = { added: [], modified: [], superseded: [], held: [], autoApplied: [], unmentioned: [], reflectSkipped: [], scopes: {} };
+    const audit = { added: [], modified: [], superseded: [], held: [], autoApplied: [], unmentioned: [], reflectSkipped: [], scopes: {},
+      links: { added: [], ported: [], droppedDangling: [], prunedStale: [], skippedExisting: 0, droppedOverCap: 0, anchorsConsidered: 0, saturationSkipped: false, ran: false } };
 
     // ---- per scope: distill all work-units -> consolidate against existing -> apply ----
     for (const scope of [...scopeSet].sort()) {
@@ -673,6 +706,45 @@ async function main() {
       if (reflect) state.reflect[scope] = scopeFingerprint(pool, scope);
     }
 
+    // ---- visionary association-surfacing (MEM-31 v1 link-only; --reflect only, on-write stays fast) ----
+    // Runs AFTER consolidation has updated the in-memory pool (supersedes reflected, live set settled) and
+    // BEFORE the PHASE-1 write/commit — so node writes + INDEX + links.json commit atomically in PHASE-1.
+    let edges = [];
+    let linksChanged = false;
+    if (reflect) {
+      edges = await loadLinks();
+      const beforeSig = visionarySig(pool, edges);
+      const liveIds = new Set(pool.filter((n) => !n.frontmatter.superseded).map((n) => n.id));
+
+      // one-time migration: port in-body `Links:` suffixes into the sidecar (idempotent; catch #6).
+      const mig = portInBodyLinks(pool, edges, liveIds, { dryRun });
+      audit.links.ported = mig.ported;
+      audit.links.droppedDangling = mig.dropped;
+      audit.links.bodyStripped = mig.stripped;   // node ids whose suffix was stripped → fold into `touched`
+
+      // prune stale edges (missing/superseded endpoint) — the one maintenance cost of the sidecar.
+      audit.links.prunedStale = prune(edges, liveIds);
+
+      // keep the cache warm for candidate selection: re-embed migration-changed + freshly-minted nodes
+      // (searchScored reads cached vecs; we save the cache in PHASE-1, not on a dry-run).
+      await syncCache(pool, cache);
+
+      // saturation guard (catch #3 / G2): same node set AND same edges since last run ⇒ no new associations.
+      const sig = visionarySig(pool, edges);
+      if (state.visionary === sig) {
+        audit.links.saturationSkipped = true;
+      } else {
+        const v = await surfaceAssociations(pool, cache, edges, { dryRun, budget: VISIONARY_BUDGET });
+        audit.links.added = v.added;
+        audit.links.skippedExisting = v.skippedExisting;
+        audit.links.droppedOverCap = v.droppedOverCap;
+        audit.links.anchorsConsidered = v.anchorsConsidered;
+        audit.links.ran = true;
+      }
+      linksChanged = visionarySig(pool, edges) !== beforeSig;   // ports + prunes + new edges (and any body strip)
+      if (!dryRun) state.visionary = visionarySig(pool, edges); // store post-pass; an unchanged next run skips
+    }
+
     // ---- audit summary ----
     printAudit(audit, dryRun, bootstrapMode);
 
@@ -682,13 +754,21 @@ async function main() {
       return;
     }
 
-    // ---- PHASE 1: write touched nodes + INDEX, refresh retrieval cache, commit ----
-    const touched = [...new Set([...audit.added, ...audit.modified, ...audit.superseded].map((x) => x.id))];
-    if (touched.length) {
-      for (const n of pool) if (touched.includes(n.id)) await writeNode(n);
-      await writeFile(INDEX_FILE, renderIndex(pool), 'utf8');
-      await syncCache(pool, cache); await cache.save();
+    // ---- PHASE 1: write touched nodes + INDEX + links.json, refresh retrieval cache, commit (ONE knowledge/ txn) ----
+    // `touched` includes consolidation changes AND the migration's suffix-stripped nodes (catch #6). The commit
+    // fires when NODES changed OR links.json changed (catch #5) — a link-only run must still persist atomically.
+    const touched = [...new Set([...audit.added, ...audit.modified, ...audit.superseded].map((x) => x.id)
+      .concat(audit.links.bodyStripped || []))];
+    if (touched.length || linksChanged) {
+      if (touched.length) {
+        for (const n of pool) if (touched.includes(n.id)) await writeNode(n);
+        await writeFile(INDEX_FILE, renderIndex(pool), 'utf8');
+        await syncCache(pool, cache); await cache.save();
+      }
+      if (linksChanged) await saveLinks(edges);
+      const links = audit.links.added.length + audit.links.ported.length;
       const summary = `reconcile: +${audit.added.length} ~${audit.modified.length} »${audit.superseded.length}`
+        + (links ? ` ⌥${links}links` : '')
         + (audit.held.length ? ` (held ${audit.held.length})` : '');
       await gitCommit(summary, ['knowledge/']);
     }
@@ -768,6 +848,15 @@ function printAudit(a, dryRun, bootstrapMode) {
   for (const x of a.superseded) console.log(`  » ${x.id} — ${x.title}`);
   for (const x of a.autoApplied) console.log(`  ✓ auto-applied ${x.kind} ${x.id} — ${x.reasons.join(', ')} [${x.via}]`);
   for (const x of a.held) console.log(`  ⚠ ESCALATED ${x.id} — ${x.reasons.join(', ')}${x.reason ? ` (${x.reason})` : ''}`);
+  const L = a.links;
+  if (L && (L.ran || L.ported.length || L.droppedDangling.length || L.prunedStale.length || L.saturationSkipped)) {
+    console.log(`\nlinks (MEM-31): ${L.saturationSkipped ? 'SATURATION-SKIP (no judge calls — node+edge set unchanged)' : `added ${L.added.length}  anchors ${L.anchorsConsidered}  skipped-existing ${L.skippedExisting}  over-cap ${L.droppedOverCap}`}`);
+    console.log(`  migration: ported ${L.ported.length}  dropped-dangling ${L.droppedDangling.length}  pruned-stale ${L.prunedStale.length}`);
+    for (const x of L.added) console.log(`  ⌥ ${x.a} ↔ ${x.b} — ${x.note}`);
+    for (const x of L.ported) console.log(`  ↪ ported ${x.a} ↔ ${x.b}`);
+    for (const x of L.droppedDangling) console.log(`  ✗ dropped [[${x.target}]] (from ${x.from} — not a live node)`);
+    for (const x of L.prunedStale) console.log(`  ⌫ pruned ${x.a} ↔ ${x.b} (endpoint gone/superseded)`);
+  }
 }
 function auditMarkdown(a) {
   const sec = (t, xs, f) => `## ${t} (${xs.length})\n${xs.map(f).join('\n') || '_none_'}\n\n`;
@@ -778,7 +867,11 @@ function auditMarkdown(a) {
     + sec('Auto-applied risky changes (MEM-28: not-always-load or LLM-approved)', a.autoApplied, (x) => `- ${x.kind} [[${x.id}]] — ${x.reasons.join(', ')} [${x.via}]`)
     + sec('Escalated to pending-review (always-load contradiction / evidence-loss)', a.held, (x) => `- ${x.id} — ${x.reasons.join(', ')}${x.reason ? ` — ${x.reason}` : ''}`)
     + sec('Kept untouched (not mentioned by consolidator)', a.unmentioned, (x) => `- [[${x.id}]] (${x.scope})`)
-    + sec('Reflect-skipped (unchanged since last reflect — no judge call)', a.reflectSkipped, (x) => `- ${x.scope} (${x.existing} node(s))`);
+    + sec('Reflect-skipped (unchanged since last reflect — no judge call)', a.reflectSkipped, (x) => `- ${x.scope} (${x.existing} node(s))`)
+    + sec('Links added (visionary associations, source: dreaming)', a.links.added, (x) => `- [[${x.a}]] ↔ [[${x.b}]] — ${x.note}`)
+    + sec('Links ported (migrated from in-body suffix, source: ported)', a.links.ported, (x) => `- [[${x.a}]] ↔ [[${x.b}]]`)
+    + sec('In-body links dropped (dangling decoration, not a node)', a.links.droppedDangling, (x) => `- [[${x.target}]] (from ${x.from})`)
+    + sec('Links pruned (endpoint missing/superseded)', a.links.prunedStale, (x) => `- [[${x.a}]] ↔ [[${x.b}]]`);
 }
 
 // Run ONLY when invoked directly — importing this module must never trigger a real reconcile run.

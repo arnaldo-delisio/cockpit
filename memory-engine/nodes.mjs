@@ -17,7 +17,7 @@ export const INDEX_FILE = resolve(MEMORY_ROOT, 'knowledge', 'INDEX.md');
 // Canonical frontmatter field order (DESIGN §6a.1). Built in this order so serialized nodes
 // stay diff-stable across runs. `citation` is present iff claim==fact.
 export const FIELD_ORDER = [
-  'id', 'title', 'type', 'claim', 'scope', 'audience', 'centrality', 'cluster',
+  'id', 'title', 'type', 'claim', 'scope', 'audience', 'source', 'centrality', 'cluster',
   'tags', 'entities', 'citation', 'superseded', 'schema_version',
   'created', 'updated', 'last_synced',
 ];
@@ -55,6 +55,7 @@ export async function loadPool() {
   for (const f of files) {
     const id = basename(f, '.md');
     const n = parseNode(await readFile(resolve(NODES_DIR, f), 'utf8'), id);
+    if (n.frontmatter.source == null) n.frontmatter.source = 'capture';  // explicit provenance default (MEM-31 catch #10)
     n.prose = n.body;
     nodes.push(n);
   }
