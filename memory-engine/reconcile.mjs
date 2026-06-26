@@ -80,7 +80,9 @@ const GUARD_HIGH_CENTRALITY = 0.50;   // cluster-flip detector threshold inside 
 const ALWAYS_LOAD_FLOOR = 0.60;       // MEM-28: mirrors projection.mjs CENTRALITY_FLOOR — only behavioral nodes
                                       // at/above this reach the always-load layer, the one path the guard protects.
 const ADJUDICATE_TIMEOUT_MS = 60_000; // the safety-adjudicator judge() call (rare; only always-load risky changes).
-const VISIONARY_BUDGET = 8;           // MEM-31 G5: max NEW links the visionary pass adds per run (global, one cross-scope pass).
+const VISIONARY_BUDGET = 16;          // MEM-31 G5: max NEW links the visionary pass adds per run (global, one cross-scope pass).
+                                      // Loosened from the decision's conservative ≤8 start after the first watched runs showed
+                                      // clean quality (18 links, 0 false positives); ceiling = min(budget, ANCHOR_CAP×LINKS_PER_ANCHOR).
 
 // --- paths ---
 const RECON_DIR = resolve(MEMORY_ROOT, '.reconciler');

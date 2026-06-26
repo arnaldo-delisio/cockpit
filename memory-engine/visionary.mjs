@@ -17,7 +17,7 @@ import { searchScored } from './retrieval.mjs';
 import { addEdge, edgeKey, degreeOf, neighborsOf } from './links.mjs';
 
 // --- tunables (grey-area picks; tune after reading a week of audit diffs) ---
-const ANCHOR_CAP = 8;            // max anchors per run ⇒ ≤8 judge('hard') calls (early-stop once budget fills)
+const ANCHOR_CAP = 12;           // max anchors per run ⇒ ≤12 judge('hard') calls (early-stop once budget fills)
 const ANCHOR_PER_CLUSTER = 2;    // cluster-diversity cap on anchors: stops one big high-centrality cluster (e.g. the
                                  // 13-node identity cluster) from sweeping every anchor slot, so a run explores
                                  // ACROSS clusters/scopes — cross-pollination is MEM-31's headline value (G1).
