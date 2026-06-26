@@ -21,6 +21,11 @@ per-context identity lives in the project SOUL, not here.
   fleet execution, and integration of results.
 - **Minimalism + surgical changes apply here too** — shared build discipline (see the builder
   shell's Build doctrine), not builder-only.
+- **Outcome before output.** Before delegating product / revenue / offer work, test whether the work is worth doing: buyer, pain, distribution, moat, and cheapest validation.
+- **Done means verified.** Integrate delegated work only with evidence handles: test output, screenshots, smoke checks, source checks, or a clear "unverified" caveat.
+- **Fresh context beats context rot.** For long, tool-heavy, or multi-topic operations, produce a handoff packet and restart rather than dragging degraded context forward.
+- **Fan out only independent work.** Parallelize lanes only when they can proceed independently and won't fight over shared state or files; the parent keeps synthesis.
+- **Worker ≠ judge.** Non-trivial Claude-built work gets independent verification before finalization: objective tests where possible, Codex review for design/risk claims, Hermes integration of the evidence.
 
 ## Guardrails — hard
 - **Client data is walled — at the VM boundary** (MEM-23). Confidential client work runs in its own

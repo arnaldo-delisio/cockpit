@@ -28,11 +28,16 @@ Turn a video/audio source into an owned, frontmattered transcript in the memory 
    - `--no-save` prints the transcript instead of writing a source file (quick look).
 2. The script prints `saved: <path>`. Read that file if the user wants the transcript inline or a summary.
 3. For a summary/answer, summarize from the saved transcript — don't re-fetch.
+4. If the transcript contains workflow/doctrine relevant to Cockpit/agent operation, do a grounding pass before presenting a lesson as new: distinguish (a) already-built cockpit mechanism, (b) partial/open gap, and (c) genuinely new idea. Prefer concise `saved path → takeaways → cockpit relevance/gap` output.
 
 ## Routing (handled by the script, cheapest first)
 - **Local media file** → ffmpeg → Groq Whisper (`GROQ_API_KEY`).
 - **YouTube / URL** → yt-dlp captions (free) → Supadata fallback (`SUPADATA_API_KEY`) → yt-dlp audio → Groq Whisper.
 - Keys are read from `~/.cockpit/.env` (gitignored). Missing `GROQ_API_KEY` only disables the audio tier; captions still work.
+
+## References
+- `references/agentic-engineering-google-video.md` — condensed notes from a Google/AI-SDLC video and the Cockpit mapping pattern: harness lessons should be checked against existing mechanisms/open gaps before being called new.
+- `references/nate-claude-code-business-partner-video.md` — condensed notes from a Nate/Claude Code workflow video and the Cockpit mapping pattern: translate business/productivity advice into outcome-before-output, verified-done, context-handoff, and subagent/goal-loop guidance.
 
 ## Rules
 1. Never paste a full raw transcript into chat unasked — save it, then point to the path or summarize.

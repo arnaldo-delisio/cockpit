@@ -12,7 +12,7 @@ relates: [OPEN-6]
 
 ## TL;DR
 
-Add the **official plugin (`codex-plugin-cc`)** now, scoped to **codebase research + cross-family adversarial review** — *not* web research. It's the lowest-setup, official, footgun-free way to get real signal, and a different-model-family second opinion is the real value-add over Claude reviewing its own work. Defer the **MCP route** (and when adopting it, prefer the **official `codex mcp-server`** built-in over community wrappers) until *autonomous* delegation becomes a concrete workflow need (OPEN-6's cross-family dispatch). Adoption is gated on a 30-minute trial.
+Add the **official plugin (`codex-plugin-cc`)** now, scoped to **codebase research + cross-family adversarial review** — *not* web research. It's the lowest-setup, official, footgun-free way to get real signal, and a different-model-family second opinion is the real value-add over Claude reviewing its own work. **2026-06-26 amendment:** treat the plugin as the first concrete worker/judge separation mechanism for non-trivial Claude-built work: Claude builds, objective tests verify behavior, Codex reviews/adversarial-reviews design and risk claims, Hermes integrates the evidence. Defer the **MCP route** (and when adopting it, prefer the **official `codex mcp-server`** built-in over community wrappers) until *autonomous* delegation becomes a concrete workflow need (OPEN-6's cross-family dispatch). Adoption is gated on a 30-minute trial.
 
 ## Load-bearing shared facts (both options inherit these)
 
@@ -59,7 +59,7 @@ Add the **official plugin (`codex-plugin-cc`)** now, scoped to **codebase resear
 1. **(5m)** Confirm CLI + auth: `codex login status` (OAuth via TOOL-3). If missing: `npm i -g @openai/codex`.
 2. **(3m)** Install: `/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` → `/reload-plugins` → `/codex:setup`.
 3. **(7m)** Repo-local trace on a real bug: `/codex:rescue --model gpt-5.4-mini "trace how X flows through this repo and where Y breaks"`. Judge vs Claude doing it natively.
-4. **(7m)** Cross-family review: make a small change, `/codex:adversarial-review` the diff. Did it catch something Claude wouldn't?
+4. **(7m)** Worker/judge review: make a small Claude-built change, run objective tests, then `/codex:adversarial-review` the diff. Did Codex catch a design/risk issue Claude wouldn't? Did it add signal beyond the tests?
 5. **(5m)** Background ergonomics: `/codex:review --background` → `/codex:status` → `/codex:result`.
 6. **(3m)** Verdict: keep only if step 3 *or* 4 gave signal Claude alone didn't. Do **not** test web research.
 

@@ -38,6 +38,13 @@ The best code is the code you never wrote. LLMs over-engineer by default; counte
 ### Surgical changes
 Touch only what the task requires. Don't "improve" adjacent code, comments, or formatting; don't refactor what isn't broken; match the surrounding style. Remove only the dead code your own changes created — mention pre-existing dead code, don't delete it unasked.
 
+### Robust work loop
+1. **Outcome before output.** For product / revenue / offer work, test buyer, pain, distribution, moat, and the cheapest validation before building.
+2. **Done means verified.** Completion requires evidence: tests, screenshots, smoke checks, source checks, or an explicit "unverified" caveat.
+3. **Fresh context beats context rot.** When a session becomes long, tool-heavy, or multi-topic, create a handoff packet and restart instead of dragging degraded context forward.
+4. **Fan out only independent work.** Use subagents / worktrees only when tasks can proceed independently and won't fight over shared state or files.
+5. **Worker ≠ judge.** Any non-trivial build/change needs independent verification before finalization: objective tests where possible, plus a separate reviewer lane for design/risk claims. Default pairing: Claude builds, Codex reviews, Hermes integrates.
+
 ## Model routing — policy
 - **Opus** orchestrates / control-plane: reasoning, decisions, synthesis (inline).
 - **Sonnet** executes: research, bulk, summaries, parallel fan-out. When dispatching research/bulk to Sonnet, **pin `model: sonnet`** (it does not default) and constrain the subagent to **summarize-only** — Opus keeps all judgment ([[delegate-research-to-sonnet-summarize-only]]).
