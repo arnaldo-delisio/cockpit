@@ -15,12 +15,11 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
 
-<!-- managed:reconciler:begin schema=2 inputs=82df8439 -->
+<!-- managed:reconciler:begin schema=2 inputs=00310c29 -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Verify source and subagent claims before freezing them into memory, code, or decisions. [[cockpit-reviewer-workflow]]
 - Recommend a path and adversarially double-check important decisions before locking them in. [[global-working-rhythm-rules]]
-- Inspect live cockpit wiring before changing it; make the smallest reversible change and verify both brains when relevant. [[prefer-grounded-verification-before-changing-cockpit-wiring]]
 - Dry-run first executions that could write, commit, or trigger side effects by import. [[first-executions-must-be-dry-run-safe]]
 - After committing in the cockpit repo, push it before leaving the work local-only. [[cockpit-commits-should-be-pushed-after-committing]]
 - Confirm cleanup scope before deleting any workspace that may contain user-created work. [[do-not-delete-real-workspaces-just-because-an-agent-touched-]]
