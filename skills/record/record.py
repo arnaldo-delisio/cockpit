@@ -7,6 +7,7 @@
 Mechanical helper for the shared `record` skill:
 - detect RUNNING Pulse/PipeWire sources via pactl
 - record one or more sources to canonical .opus audio under ~/.cockpit/artifacts/
+- optionally record the full desktop screen to a separate .mp4 artifact
 - transcribe by delegating to ~/.cockpit/skills/watch/watch.py
 - never writes meeting-note prose; the agent writes the note from the transcript
 """
@@ -178,6 +179,43 @@ def ffmpeg_record_command(sources: list[dict[str, str]], output: Path) -> list[s
     return cmd
 
 
+def screen_record_command(output: Path) -> list[str]:
+    if not shutil.which("wf-recorder"):
+        raise SystemExit("Screen recording requested, but wf-recorder is not installed. Install wf-recorder for Wayland screen capture, or continue audio-only.")
+    return ["wf-recorder", "-f", str(output)]
+
+
+def start_screen_recording(state: dict[str, Any], sp: Path) -> dict[str, Any]:
+    existing_pid = state.get("screen_pid")
+    if isinstance(existing_pid, int) and process_alive(existing_pid):
+        raise SystemExit(f"Screen recording is already active (pid {existing_pid})")
+
+    scope = str(state["scope"])
+    slug = str(state["slug"])
+    video = dirs(scope)["recordings"] / f"{slug}.mp4"
+    cmd = screen_record_command(video)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    time.sleep(0.8)
+    if proc.poll() is not None:
+        err = proc.stderr.read() if proc.stderr else ""
+        raise SystemExit("wf-recorder exited immediately:\n" + err[-1200:])
+
+    state.update({
+        "screen_pid": proc.pid,
+        "screen_path": str(video),
+        "screen_started_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "screen_command": cmd,
+    })
+    sp.write_text(json.dumps(state, indent=2))
+    return state
+
+
 def duration_hhmmss(path: Path) -> str | None:
     if not shutil.which("ffprobe") or not path.exists():
         return None
@@ -281,6 +319,12 @@ def command_start(args: argparse.Namespace) -> None:
     }
     sp = state_path(scope)
     sp.write_text(json.dumps(state, indent=2))
+    if args.screen:
+        try:
+            state = start_screen_recording(state, sp)
+        except SystemExit as exc:
+            state["screen_error"] = str(exc)
+            sp.write_text(json.dumps(state, indent=2))
     print(json.dumps({"started": True, "state_path": str(sp), **state}, indent=2))
 
 
@@ -312,6 +356,10 @@ def command_stop(args: argparse.Namespace) -> None:
     if not active:
         raise SystemExit("No active recording found")
     scope, sp, state = active
+    screen_pid = state.get("screen_pid")
+    screen_path = Path(state["screen_path"]) if state.get("screen_path") else None
+    if isinstance(screen_pid, int) and process_alive(screen_pid):
+        stop_process(screen_pid)
     pid = state["pid"]
     stop_process(pid)
     audio = Path(state["audio_path"])
@@ -332,12 +380,26 @@ def command_stop(args: argparse.Namespace) -> None:
         "stopped_at": dt.datetime.now().isoformat(timespec="seconds"),
         "sources": state.get("sources", []),
     }
+    if screen_path and screen_path.exists() and screen_path.stat().st_size > 0:
+        result["screen_path"] = str(screen_path)
+        result["screen_duration"] = duration_hhmmss(screen_path)
+    elif screen_path:
+        result["screen_error"] = f"Screen recording path missing or empty: {screen_path}"
     if not args.no_transcribe:
         language = require_language(args.language or state.get("language"))
         result["language"] = language
         result["transcript_path"] = str(run_watch(audio, scope, language))
     sp.unlink(missing_ok=True)
     print(json.dumps(result, indent=2))
+
+
+def command_screen_start(_: argparse.Namespace) -> None:
+    active = find_active_state()
+    if not active:
+        raise SystemExit("No active audio recording found; start audio before starting screen capture")
+    _scope, sp, state = active
+    state = start_screen_recording(state, sp)
+    print(json.dumps({"screen_started": True, "state_path": str(sp), **state}, indent=2))
 
 
 def command_ingest(args: argparse.Namespace) -> None:
@@ -376,8 +438,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--scope", help="Cockpit scope; required unless COCKPIT_SCOPE is set")
     s.add_argument("--title", help="short title used in the audio slug")
     s.add_argument("--language", help="input language for later transcription as ISO-639-1 code (e.g. it, en, es), or auto")
+    s.add_argument("--screen", action="store_true", help="also start full-desktop screen recording via wf-recorder")
     s.add_argument("--force", action="store_true", help="start even if a previous state file says active")
     s.set_defaults(func=command_start)
+
+    s = sub.add_parser("screen-start", help="start full-desktop screen recording for the active audio recording")
+    s.set_defaults(func=command_screen_start)
 
     s = sub.add_parser("stop", help="stop active recording and transcribe it")
     s.add_argument("--language", help="input language as ISO-639-1 code (required unless start stored it, or use auto)")
