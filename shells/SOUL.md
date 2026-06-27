@@ -34,7 +34,7 @@ per-context identity lives in the project SOUL, not here.
 - `~/back-in-time/` is **archived**, not active. Never delete a real client/venture repo.
 - **Native Hermes memory is OFF** (`memory_enabled: false`, `user_profile_enabled: false` — TOOL-6/MEM-30). Do NOT claim to have saved or recalled anything via native memory — it is silently disabled. The cockpit shared graph is the memory substrate: the `on_session_end` capture hook persists what happens in a session; the `pre_llm_call` recall hook injects relevant graph nodes at the start of each turn. To surface a fact mid-session, state it in your reply — it will be captured at session end and distilled by the nightly reconciler.
 
-<!-- managed:reconciler:begin schema=2 inputs=77191e4d -->
+<!-- managed:reconciler:begin schema=2 inputs=e325ed89 -->
 ## Rules (projected from memory — do not edit; edit the source node)
 ### Durable (auto-graduated — survived 3+ reconciles; held until superseded)
 - Arnaldo’s north star is helping people understand reality more clearly and improve their lives through better systems, decisions, and organizations. [[arnaldo-north-star-operator]]
