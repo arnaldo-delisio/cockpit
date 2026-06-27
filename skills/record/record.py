@@ -195,10 +195,16 @@ def duration_hhmmss(path: Path) -> str | None:
     return str(dt.timedelta(seconds=seconds))
 
 
-def run_watch(audio: Path, scope: str) -> Path:
+def require_language(language: str | None) -> str:
+    if not language:
+        raise SystemExit("Missing --language for transcription. Use an ISO-639-1 code like it/en/es, or --language auto to omit Groq's language hint.")
+    return language.strip().lower()
+
+
+def run_watch(audio: Path, scope: str, language: str) -> Path:
     if not WATCH.exists():
         raise SystemExit(f"watch.py not found at {WATCH}")
-    cmd = ["uv", "run", str(WATCH), str(audio), "--scope", scope]
+    cmd = ["uv", "run", str(WATCH), str(audio), "--scope", scope, "--language", language]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
@@ -269,6 +275,7 @@ def command_start(args: argparse.Namespace) -> None:
         "title": args.title or "meeting",
         "audio_path": str(audio),
         "started_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "language": args.language,
         "sources": sources,
         "command": cmd,
     }
@@ -326,7 +333,9 @@ def command_stop(args: argparse.Namespace) -> None:
         "sources": state.get("sources", []),
     }
     if not args.no_transcribe:
-        result["transcript_path"] = str(run_watch(audio, scope))
+        language = require_language(args.language or state.get("language"))
+        result["language"] = language
+        result["transcript_path"] = str(run_watch(audio, scope, language))
     sp.unlink(missing_ok=True)
     print(json.dumps(result, indent=2))
 
@@ -347,7 +356,9 @@ def command_ingest(args: argparse.Namespace) -> None:
         "duration": duration_hhmmss(audio),
     }
     if not args.no_transcribe:
-        result["transcript_path"] = str(run_watch(audio, scope))
+        language = require_language(args.language)
+        result["language"] = language
+        result["transcript_path"] = str(run_watch(audio, scope, language))
     print(json.dumps(result, indent=2))
 
 
@@ -364,10 +375,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("start", help="start live recording from RUNNING pactl sources")
     s.add_argument("--scope", help="Cockpit scope; required unless COCKPIT_SCOPE is set")
     s.add_argument("--title", help="short title used in the audio slug")
+    s.add_argument("--language", help="input language for later transcription as ISO-639-1 code (e.g. it, en, es), or auto")
     s.add_argument("--force", action="store_true", help="start even if a previous state file says active")
     s.set_defaults(func=command_start)
 
     s = sub.add_parser("stop", help="stop active recording and transcribe it")
+    s.add_argument("--language", help="input language as ISO-639-1 code (required unless start stored it, or use auto)")
     s.add_argument("--no-transcribe", action="store_true", help="stop only; do not call watch.py")
     s.set_defaults(func=command_stop)
 
@@ -375,6 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("audio", help="existing audio/video file")
     s.add_argument("--scope", help="Cockpit scope; required unless COCKPIT_SCOPE is set")
     s.add_argument("--title", help="short title used in the audio slug")
+    s.add_argument("--language", help="input language as ISO-639-1 code (required unless --no-transcribe, or use auto)")
     s.add_argument("--no-transcribe", action="store_true", help="ingest only; do not call watch.py")
     s.set_defaults(func=command_ingest)
     return p

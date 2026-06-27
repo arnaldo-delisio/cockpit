@@ -19,7 +19,7 @@ import argparse, os, re, sys, json, subprocess, tempfile, shutil, datetime, glob
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) cockpit-watch/1.0"  # Groq/Supadata sit behind Cloudflare; default urllib UA is 403'd
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
-GROQ_MODEL = "whisper-large-v3-turbo"
+GROQ_MODEL = "whisper-large-v3"
 SUPADATA_URL = "https://api.supadata.ai/v1/transcript"
 COCKPIT = os.path.expanduser("~/.cockpit")
 GROQ_MAX_BYTES = 24 * 1024 * 1024  # stay under Groq's 25 MB upload cap
@@ -132,18 +132,21 @@ def chunk_audio(audio, tmp):
     return sorted(glob.glob(os.path.join(tmp, "chunk-*.opus"))) or [audio]
 
 
-def groq_transcribe(audio, tmp):
+def groq_transcribe(audio, tmp, language=None, model=GROQ_MODEL):
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if not key:
         raise RuntimeError("GROQ_API_KEY not set in ~/.cockpit/.env — cannot transcribe audio")
     import requests
     parts = []
     for piece in chunk_audio(audio, tmp):
+        data = {"model": model, "response_format": "json", "temperature": "0"}
+        if language and language != "auto":
+            data["language"] = language
         with open(piece, "rb") as f:
             r = requests.post(GROQ_URL,
                               headers={"Authorization": f"Bearer {key}", "User-Agent": UA},
                               files={"file": (os.path.basename(piece), f)},
-                              data={"model": GROQ_MODEL, "response_format": "json"},
+                              data=data,
                               timeout=600)
         if r.status_code != 200:
             raise RuntimeError(f"Groq HTTP {r.status_code}: {r.text[:300]}")
@@ -183,6 +186,10 @@ def save_source(text, meta):
     ]
     if meta.get("frames"):
         fm.append(f"frames: {meta['frames']}")
+    if meta.get("language"):
+        fm.append(f"language: {meta['language']}")
+    if meta.get("model"):
+        fm.append(f"model: {meta['model']}")
     fm += ["distilled_into: []", "concepts: []", "people: []", "products: []",
            "schema_version: 1", "---", "", text, ""]
     open(path, "w", encoding="utf-8").write("\n".join(fm))
@@ -200,6 +207,7 @@ def main():
     ap.add_argument("--visual", action="store_true", help="also extract scene-change frames")
     ap.add_argument("--no-save", action="store_true", help="print transcript, do not autosave")
     ap.add_argument("--model", default=GROQ_MODEL, help="Groq whisper model")
+    ap.add_argument("--language", help="input language as ISO-639-1 code (e.g. en, it, es); use 'auto' to omit")
     a = ap.parse_args()
     ARGS_SCOPE = a.scope
     load_env()
@@ -228,10 +236,10 @@ def main():
                 got = glob.glob(os.path.join(tmp, "dl.*"))
                 if not got:
                     sys.exit("[watch] yt-dlp audio download failed:\n" + r.stderr[-600:])
-                text = groq_transcribe(to_audio(got[0], tmp), tmp)
+                text = groq_transcribe(to_audio(got[0], tmp), tmp, a.language, a.model)
                 method = "groq-whisper"
         else:
-            text = groq_transcribe(to_audio(src, tmp), tmp)
+            text = groq_transcribe(to_audio(src, tmp), tmp, a.language, a.model)
             method = "groq-whisper"
 
         if not text:
@@ -249,6 +257,7 @@ def main():
         "date": datetime.date.today().isoformat(),
         "anchor": f"watch-{datetime.date.today().isoformat()}-{slug}",
         "scope": a.scope, "method": method, "frames": frames,
+        "language": a.language or "auto", "model": a.model,
     })
     print(f"saved: {path}")
     print(f"method: {method} | {len(text)} chars" + (f" | frames: {frames}" if frames else ""))

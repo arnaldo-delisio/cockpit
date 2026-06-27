@@ -43,34 +43,36 @@ Layout:
 ### Live meeting
 
 1. If the user did not provide a scope, ask with asktool/clarify. Do not silently default.
-2. Start recording:
+2. Ask the meeting language before recording/transcribing. Prefer an ISO-639-1 code (`it`, `en`, `es`, …). Use `auto` only if the user truly does not know; Groq's docs say an explicit `language` improves accuracy and latency.
+3. Start recording:
    ```bash
-   uv run ~/.cockpit/skills/record/record.py start --scope <scope> [--title "short title"]
+   uv run ~/.cockpit/skills/record/record.py start --scope <scope> --language <code|auto> [--title "short title"]
    ```
    - The script detects RUNNING Pulse/PipeWire sources using `pactl`.
    - If both mic and monitor are running, it mixes them.
    - If only one RUNNING source exists, it records that source.
    - If none are RUNNING, it stops and reports detected sources.
-3. Tell the user: `Recording started. Say "meeting ended" when done.`
-4. When the user says the meeting ended, stop and transcribe:
+4. Tell the user: `Recording started. Say "meeting ended" when done.`
+5. When the user says the meeting ended, stop and transcribe:
    ```bash
    uv run ~/.cockpit/skills/record/record.py stop
    ```
    The script prints JSON including `audio_path` and `transcript_path`.
-5. If participants were not already provided, ask: `Who were the participants?`
-6. Read the transcript source file. Write the meeting note yourself to:
+6. If participants were not already provided, ask: `Who were the participants?`
+7. Read the transcript source file. Write the meeting note yourself to:
    `~/.cockpit/artifacts/meetings/<scope>/notes/<slug>.md`
-7. Report note path, audio path, transcript path, and one-line summary.
+8. Report note path, audio path, transcript path, and one-line summary.
 
 ### Existing audio file
 
 1. Ask for scope if omitted.
-2. Ingest and transcribe:
+2. Ask the audio language before transcribing. Prefer an ISO-639-1 code (`it`, `en`, `es`, …); use `auto` only when unknown.
+3. Ingest and transcribe:
    ```bash
-   uv run ~/.cockpit/skills/record/record.py ingest /path/to/audio --scope <scope> [--title "short title"]
+   uv run ~/.cockpit/skills/record/record.py ingest /path/to/audio --scope <scope> --language <code|auto> [--title "short title"]
    ```
-3. Ask for participants if missing.
-4. Read the transcript and write the concise note.
+4. Ask for participants if missing.
+5. Read the transcript and write the concise note.
 
 ## Note format
 
@@ -104,9 +106,9 @@ duration: "HH:MM:SS"
 ## Script commands
 
 ```bash
-uv run ~/.cockpit/skills/record/record.py start --scope <scope> [--title <title>] [--force]
-uv run ~/.cockpit/skills/record/record.py stop [--no-transcribe]
-uv run ~/.cockpit/skills/record/record.py ingest <audio> --scope <scope> [--title <title>] [--no-transcribe]
+uv run ~/.cockpit/skills/record/record.py start --scope <scope> --language <code|auto> [--title <title>] [--force]
+uv run ~/.cockpit/skills/record/record.py stop [--language <code|auto>] [--no-transcribe]
+uv run ~/.cockpit/skills/record/record.py ingest <audio> --scope <scope> --language <code|auto> [--title <title>] [--no-transcribe]
 uv run ~/.cockpit/skills/record/record.py status
 uv run ~/.cockpit/skills/record/record.py scopes
 ```
@@ -118,10 +120,12 @@ uv run ~/.cockpit/skills/record/record.py scopes
 3. Store transcripts through `watch.py` in the scope's `sources/` layer.
 4. Store audio/state/notes under `~/.cockpit/artifacts/meetings/<scope>/`.
 5. Keep the full transcript in one home only: the transcript source file. Meeting notes link to it.
-6. Ask for participants before writing the note if they were not provided.
-7. Proceed with any RUNNING audio source. Mix multiple sources; stop only if no source is RUNNING.
-8. Never use durable `meeting-tmp` filenames. Use timestamped slugs.
-9. If a recording is active, refuse to start another unless the user explicitly chooses `--force`.
-10. Do not read, print, or embed secrets. `watch.py` reads `GROQ_API_KEY` from `~/.cockpit/.env`.
-11. Do not write canonical memory nodes. Raw transcript is a source; the reconciler decides what becomes durable knowledge.
-12. Report real paths and real command output only. If transcription fails, preserve the audio and say so.
+6. Ask for language before transcription; pass it to `record.py`/`watch.py`. Use ISO-639-1 (`it`, `en`, `es`, …) unless the user explicitly chooses `auto`.
+7. Ask for participants before writing the note if they were not provided.
+8. Proceed with any RUNNING audio source. Mix multiple sources; stop only if no source is RUNNING.
+9. Never use durable `meeting-tmp` filenames. Use timestamped slugs.
+10. If a recording is active, refuse to start another unless the user explicitly chooses `--force`.
+11. Do not read, print, or embed secrets. `watch.py` reads `GROQ_API_KEY` from `~/.cockpit/.env`.
+12. Do not write canonical memory nodes. Raw transcript is a source; the reconciler decides what becomes durable knowledge.
+13. Report real paths and real command output only. If transcription fails, preserve the audio and say so.
+14. If the requested scope is confidential / intentionally absent from `~/.cockpit/memory/scopes.json`, do **not** silently ingest into a shared fallback scope. Ask or use an explicitly project-local, gitignored artifacts area. If `record.py` must be used for transcription and only registered scopes are available, treat the shared-scope output as temporary: immediately copy audio/transcript/note into the confidential project's gitignored storage, then delete the temporary Cockpit scope copies and report both the workaround and final real paths.
