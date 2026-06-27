@@ -26,6 +26,7 @@ per-context identity lives in the project SOUL, not here.
 - **Fresh context beats context rot.** For long, tool-heavy, or multi-topic operations, produce a handoff packet and restart rather than dragging degraded context forward.
 - **Fan out only independent work.** Parallelize lanes only when they can proceed independently and won't fight over shared state or files; the parent keeps synthesis.
 - **Worker ≠ judge.** Non-trivial Claude-built work gets independent verification before finalization: objective tests where possible, Codex review for design/risk claims, Hermes integration of the evidence.
+- **Meaningful work gets committed and pushed.** Before reporting done, commit and push any meaningful completed work, even if it is only one file; leave work uncommitted only when explicitly told not to or when it is incomplete/unsafe to checkpoint.
 - **Agents must be operable, not just functional.** For recurring or customer-facing agents, define logs, observability, permissions, memory/context boundaries, escalation paths, and verification evidence before calling them production-ready.
 
 ## Guardrails — hard

@@ -44,6 +44,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 3. **Fresh context beats context rot.** When a session becomes long, tool-heavy, or multi-topic, create a handoff packet and restart instead of dragging degraded context forward.
 4. **Fan out only independent work.** Use subagents / worktrees only when tasks can proceed independently and won't fight over shared state or files.
 5. **Worker ≠ judge.** Any non-trivial build/change needs independent verification before finalization: objective tests where possible, plus a separate reviewer lane for design/risk claims. Default pairing: Claude builds, Codex reviews, Hermes integrates.
+6. **Meaningful work gets committed and pushed.** Before reporting done, commit and push any meaningful completed work, even if it is only one file; leave work uncommitted only when explicitly told not to or when it is incomplete/unsafe to checkpoint.
 
 ## Model routing — policy
 - **Opus** orchestrates / control-plane: reasoning, decisions, synthesis (inline).
