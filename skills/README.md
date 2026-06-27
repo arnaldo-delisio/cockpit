@@ -74,5 +74,6 @@ Step-by-step. Each brain executes what applies to it.
 |-------|--------|---------|
 | `watch/` | **live** (2026-06-22) — both brains verified | `~/.claude/skills/youtube-extract/` (retire) |
 | `grill-me/` | **built** (2026-06-24) — dry-validated; both-brain wiring pending | — |
+| `record/` | **built** — live meeting audio capture + watch-backed transcription | `~/.claude/skills/record-meeting/` |
 
 Full specs in `~/.cockpit/STATE.md` → Skills section.
