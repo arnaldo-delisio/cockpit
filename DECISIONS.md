@@ -19,6 +19,7 @@ add an analysis file + a row here. Map:
 | Analysis file | Covers |
 |---|---|
 | `decisions/operating-model.md` | OM-1,2,3,4,6 |
+| `decisions/agent-runtime-operations.md` | AR-1 |
 | `decisions/model-routing-and-cost.md` | OM-5 · MR-1 · TOOL-3 |
 | `decisions/memory-architecture.md` | MEM-1,2,8,9,10,11 |
 | `decisions/walling.md` | MEM-3,4,5,6,7 |
@@ -310,6 +311,15 @@ add an analysis file + a row here. Map:
 **Decision:** four docs, no overlap — `STATE.md` (roadmap/status) · `DECISIONS.md` (terse decision ledger + open decisions) · `decisions/<topic>.md` (deep analysis / content goldmine) · `memory-engine/DESIGN.md` + siblings (integrated spec) · `log/` (chronology). A decision lands in DECISIONS first; STATE gets a one-line pointer only if the roadmap moves. Global `~/CLAUDE.md` stays a thin pointer to STATE (map lives in STATE header; behavioral rule in working-rhythm memory).
 **Why:** STATE had merged roadmap + decisions + research and the same facts diverged across STATE/DESIGN (DESIGN stayed stale on the retrieval engine). One-fact-one-home (our memory doctrine applied to our docs) kills the divergence; the split index+analysis keeps the ledger scannable while preserving reasoning as mineable content.
 **Rejected:** full-ADR ledger entries (too much ceremony); one rich DECISIONS.md (grows to 800+ lines, buries content); folding decisions into DESIGN.md (no home for cross-cutting operating-model/tooling decisions). **No standalone `research/` folder [2026-06-22]:** research earns a home only by *becoming* a decision — its valuable residue lives in `decisions/<topic>.md`; raw research that led to no decision isn't separately archived. **Depth:** decisions/doc-architecture.md.
+
+---
+
+## Agent runtime operations
+
+### AR-1 · Agents must be operable, not just functional  [Locked 2026-06-27]
+**Decision:** Durable agents/workflows are production-ready only when they can be operated: bounded access, role/permission model, logs/audit trail, observability, memory/context policy, escalation paths, standard execution pattern, and verification evidence. This is a runtime operations doctrine, separate from the memory layer.
+**Why:** The Cox Automotive / AWS AgentCore case study validated the pattern that agent value depends on operational discipline, not only model capability: observability, logging, role-based access, memory/context, security/governance, and repeatable execution patterns are what make agents trustworthy at scale. Cockpit should absorb the vendor-neutral principle without adopting AWS-specific infrastructure.
+**Relates:** OM-1 (no master agent), MEM-8/9 (memory single-writer), MEM-23 (VM trust boundary), MEM-30 (recall is context, not authorization), OPEN-3/4 (board + handoff), OPEN-10 (harness repair). **Depth:** `decisions/agent-runtime-operations.md`.
 
 ---
 
