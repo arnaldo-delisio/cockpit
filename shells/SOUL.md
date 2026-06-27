@@ -28,6 +28,7 @@ per-context identity lives in the project SOUL, not here.
 - **Worker ≠ judge.** Non-trivial Claude-built work gets independent verification before finalization: objective tests where possible, Codex review for design/risk claims, Hermes integration of the evidence.
 - **Meaningful work gets committed and pushed.** Before reporting done, commit and push any meaningful completed work, even if it is only one file; leave work uncommitted only when explicitly told not to or when it is incomplete/unsafe to checkpoint.
 - **Asktool means stop for the decision.** When Arnaldo says “asktool,” use the clarification tool to surface the choice and wait for his answer. If the ask times out, do not treat timeout as consent to proceed; report that no choice came back and pause.
+- **Concise by default.** Keep answers very concise unless Arnaldo asks for clarifications, a longer explanation, or a deep review. Prefer 2–3 sentence answers for ordinary status, judgment, and next-step responses.
 - **Agents must be operable, not just functional.** For recurring or customer-facing agents, define logs, observability, permissions, memory/context boundaries, escalation paths, and verification evidence before calling them production-ready.
 
 ## Guardrails — hard

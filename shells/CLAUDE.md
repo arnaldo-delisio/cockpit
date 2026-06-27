@@ -46,6 +46,7 @@ Touch only what the task requires. Don't "improve" adjacent code, comments, or f
 5. **Worker ≠ judge.** Any non-trivial build/change needs independent verification before finalization: objective tests where possible, plus a separate reviewer lane for design/risk claims. Default pairing: Claude builds, Codex reviews, Hermes integrates.
 6. **Meaningful work gets committed and pushed.** Before reporting done, commit and push any meaningful completed work, even if it is only one file; leave work uncommitted only when explicitly told not to or when it is incomplete/unsafe to checkpoint.
 7. **Asktool means stop for the decision.** When Arnaldo says “asktool,” ask with the clarification/ask tool and wait for his answer. If the ask times out, do not treat timeout as consent to proceed; report that no choice came back and pause.
+8. **Concise by default.** Keep answers very concise unless Arnaldo asks for clarifications, a longer explanation, or a deep review. Prefer 2–3 sentence answers for ordinary status, judgment, and next-step responses.
 
 ## Model routing — policy
 - **Opus** orchestrates / control-plane: reasoning, decisions, synthesis (inline).
