@@ -48,7 +48,9 @@ Do **not** use for:
    - `hermes-prompt` — operator-oriented prompt with orchestration/status/next actions.
    If the target is obvious from the user's wording, do not ask.
 
-2. **Gather live state when tools are available.** For repo work, check real state before writing the handoff:
+2. **Use `Goal` as the next-session objective.** In a handoff, `Goal` must be forward-looking: the crisp one-unit objective the next agent should pursue. Do not use `Goal` to recap what the completed session was about. Put completed-session context under `Session Summary` or `Current State` instead.
+
+3. **Gather live state when tools are available.** For repo work, check real state before writing the handoff:
    - `git status --short --branch`
    - `git log --oneline -3`
    - relevant generated artifact paths, ignored/tracked status, and verification output already run.
@@ -76,7 +78,10 @@ For: <Hermes | Claude Code | either | human>
 Mode: <short-summary | next-session-prompt | claude-prompt | hermes-prompt>
 
 ## Goal
-<What this session was trying to accomplish.>
+<The next coherent unit of work. This must be forward-looking and actionable for the next agent, not a recap of the completed session.>
+
+## Session Summary
+<Brief recap of what this session completed or changed.>
 
 ## Current State
 - Done: <facts only>
