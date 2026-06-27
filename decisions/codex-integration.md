@@ -56,12 +56,11 @@ Add the **official plugin (`codex-plugin-cc`)** now, scoped to **codebase resear
 
 ## 30-minute trial plan
 
-1. **(5m)** Confirm CLI + auth: `codex login status` (OAuth via TOOL-3). If missing: `npm i -g @openai/codex`.
-2. **(3m)** Install: `/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` → `/reload-plugins` → `/codex:setup`.
-3. **(7m)** Repo-local trace on a real bug: `/codex:rescue --model gpt-5.4-mini "trace how X flows through this repo and where Y breaks"`. Judge vs Claude doing it natively.
-4. **(7m)** Worker/judge review: make a small Claude-built change, run objective tests, then `/codex:adversarial-review` the diff. Did Codex catch a design/risk issue Claude wouldn't? Did it add signal beyond the tests?
-5. **(5m)** Background ergonomics: `/codex:review --background` → `/codex:status` → `/codex:result`.
-6. **(3m)** Verdict: keep only if step 3 *or* 4 gave signal Claude alone didn't. Do **not** test web research.
+1. **DONE 2026-06-27 — install/setup.** `codex login status` → ChatGPT auth active; `claude plugin marketplace add openai/codex-plugin-cc`; `claude plugin install codex@openai-codex`; plugin installed/enabled as `codex@openai-codex` v1.0.5; `/codex:setup` verified Node v26.2.0, npm 11.16.0, Codex CLI 0.141.0, ChatGPT auth active. Review gate is **disabled** for the trial.
+2. **(7m)** Repo-local trace on a real bug: `/codex:rescue --model gpt-5.4-mini "trace how X flows through this repo and where Y breaks"`. Judge vs Claude doing it natively.
+3. **(7m)** Worker/judge review: make a small Claude-built change, run objective tests, then `/codex:adversarial-review` the diff. Did Codex catch a design/risk issue Claude wouldn't? Did it add signal beyond the tests?
+4. **(5m)** Background ergonomics: `/codex:review --background` → `/codex:status` → `/codex:result`.
+5. **(3m)** Verdict: keep only if step 2 *or* 3 gave signal Claude alone didn't. Do **not** test web research.
 
 ## Stop / red flags
 

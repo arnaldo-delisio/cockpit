@@ -14,6 +14,9 @@ building the cockpit. Keep it thin: it points, it doesn't contain.
 ## Write to the home, not here
 One fact, one home (DOC-1): STATE = roadmap · DECISIONS = ledger · decisions/ = deep dives ·
 DESIGN = specs · log/ = chronology. Record in the home first, then add a pointer.
+After meaningful cockpit work, update the owning docs before reporting done: status/next in STATE,
+decisions in DECISIONS, integrated specs in DESIGN, chronology in log. Do not leave completed
+system work only in chat.
 
 <!-- managed:reconciler:begin schema=2 inputs=00310c29 -->
 ## Rules (projected from memory — do not edit; edit the source node)
